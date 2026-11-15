@@ -422,6 +422,26 @@ async function rendererProbe() {
     micOff.hidden === true && micOff.mic === 'off', JSON.stringify(micOff));
   await js(win, `window.probe.emit('status', { state: 'pill', meeting: false, meetingMicButton: true }); true`);
 
+  /* ---- tombol mic = mute asli, tombol kamera = shortcut per app ---- */
+  await js(win, `window.probe.emit('status', { state: 'pill', meeting: true, meetingMicButton: true }); true`);
+  await sleep(120);
+  await js(win, `document.getElementById('meetingMic').click(); true`);
+  await sleep(120);
+  const micClick = await js(win, `(() => ({ muted: document.getElementById('island').dataset.micMuted,
+    calls: window.probe.calls().filter((c) => c.kind === 'micMuteToggle').length,
+    oldVol: window.probe.calls().filter((c) => c.kind === 'toggleMute').length }))()`);
+  check('klik tombol mic: mute asli via mic:mute-toggle (bukan volume)',
+    micClick.calls === 1 && micClick.muted === 'true' && micClick.oldVol === 0, JSON.stringify(micClick));
+  const camBtn = await js(win, `(() => { const b = document.getElementById('meetingCam');
+    if (!b) return { exists: false };
+    b.click(); return { exists: true }; })()`);
+  await sleep(120);
+  const camClick = await js(win, `(() => ({ calls: window.probe.calls().filter((c) => c.kind === 'camToggle').length }))()`);
+  check('tombol kamera ada di mic pill dan memanggil cam:toggle',
+    camBtn.exists === true && camClick.calls === 1, JSON.stringify({ camBtn, camClick }));
+  await js(win, `window.probe.emit('status', { state: 'pill', meeting: false }); true`);
+  await sleep(120);
+
   /* ---- glass themes: --glass-a var follows glassLevel ---- */
   await js(win, `window.probe.emit('settings', { surface: 'Translucent', glassLevel: 70 }); true`);
   await sleep(120);

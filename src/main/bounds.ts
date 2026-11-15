@@ -27,7 +27,7 @@ export function effectiveScalePct(settings: Settings): number {
 }
 
 /** Extra pill width reserved for the separate mic capsule (gap + capsule). */
-export const MIC_PILL_EXTRA = 86;
+export const MIC_PILL_EXTRA = 170;
 /** Extra pill width reserved for the notice/meeting banner overlay. */
 export const BANNER_EXTRA = 250;
 

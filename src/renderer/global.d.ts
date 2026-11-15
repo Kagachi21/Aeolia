@@ -170,6 +170,9 @@ declare global {
       playMedia(): void;
       bannerShow(active: boolean): void;
       islandOpen(): Promise<void>;
+      micMuteState(): Promise<boolean | null>;
+      micMuteToggle(): Promise<boolean | null>;
+      camToggle(): Promise<{ ok: boolean; hint?: string }>;
       noticeReply(app: string, body: string, text: string): Promise<{ opened: boolean }>;
       prevMedia(): void;
       nextMedia(): void;

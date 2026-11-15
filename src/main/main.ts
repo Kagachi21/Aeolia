@@ -10,7 +10,10 @@ import { loadSettings, setValue } from './settings';
 import { readMedia } from './media';
 import { readPower } from './power';
 import { mediaNext, mediaPlayPause, mediaPrev } from './keys';
+import { sendShortcut } from './keys';
 import { fetchLyrics } from './lyrics';
+import { getMicMuted, toggleMicMute } from './micMute';
+import { camDecision } from './camToggle';
 import { brightnessRange, pasteShortcut, setBrightness, toggleMute, volumeStep } from './systemControl';
 import { cleanRam, cpuPercent, memoryInfo } from './ramClean';
 import { registerCapture, disposeCapture } from './capture';
@@ -522,6 +525,17 @@ app.whenReady().then(() => {
     volumeStep(direction, steps);
   });
   ipcMain.on('ctl:mute', () => toggleMute());
+  // Real microphone mute (Core Audio capture endpoint) + per-app camera
+  // shortcut for the meeting pill. Null/ok:false are honest failure states.
+  ipcMain.handle('mic:mute-state', () => getMicMuted());
+  ipcMain.handle('mic:mute-toggle', () => toggleMicMute());
+  ipcMain.handle('cam:toggle', () => {
+    const app = getExtras().meetingApp || '';
+    const focused = getActiveWindow({ x: 0, y: 0, width: 0, height: 0 });
+    const decision = camDecision(app, focused.process || '');
+    if (decision.send) sendShortcut(decision.send);
+    return { ok: Boolean(decision.send), hint: decision.hint ?? '' };
+  });
   // Worship reminders pause the current track; the resume offer plays it again.
   // Both are guarded so a stale click can never invert playback.
   ipcMain.on('media:pause', () => { if (mediaPlaying) mediaPlayPause(); });

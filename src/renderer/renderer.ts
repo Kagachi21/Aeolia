@@ -214,6 +214,7 @@ let hovered = false;
    The capsule lives in its own layer beside the island: on join it plays a
    short "joining" look (mic + pulsing dot) before settling. */
 const meetingMicBtn = document.getElementById('meetingMic') as HTMLButtonElement;
+const meetingCamBtn = document.getElementById('meetingCam') as HTMLButtonElement | null;
 const micPill = document.getElementById('micPill') as HTMLDivElement;
 let micMuted = false;
 let micJoinTimer: number | null = null;
@@ -221,15 +222,21 @@ let micJoinTimer: number | null = null;
 function updateMeetingMic(): void {
   const active = root.dataset.meeting === 'true' && root.dataset.meetingMic !== 'false';
   const inPill = root.dataset.state === 'pill';
-  if (micJoinTimer !== null) { clearTimeout(micJoinTimer); micJoinTimer = null; }
   if (!active || !inPill) {
+    if (micJoinTimer !== null) { clearTimeout(micJoinTimer); micJoinTimer = null; }
     micPill.hidden = true;
     root.dataset.mic = 'off';
   } else {
     micPill.hidden = false;
     if (root.dataset.mic === 'off') {
-      // Rising edge: play the joining animation once, then settle.
+      // Rising edge: play the joining animation once, then settle. The real
+      // mute state is fetched so the button never claims an invented state.
       root.dataset.mic = 'joining';
+      window.api.micMuteState().then((muted) => {
+        micMuted = muted === true;
+        root.dataset.micMuted = muted === null ? 'unknown' : String(micMuted);
+        updateMeetingMic();
+      }).catch(() => { root.dataset.micMuted = 'unknown'; });
       micJoinTimer = window.setTimeout(() => {
         micJoinTimer = null;
         if (root.dataset.mic === 'joining') root.dataset.mic = 'on';
@@ -242,10 +249,26 @@ function updateMeetingMic(): void {
 }
 
 meetingMicBtn.addEventListener('click', () => {
-  micMuted = !micMuted;
-  window.api.toggleMute();
-  updateMeetingMic();
+  window.api.micMuteToggle().then((next) => {
+    if (next === null) {
+      root.dataset.micMuted = 'unknown';
+      meetingMicBtn.title = 'Mikrofon tidak bisa dikontrol · cek izin aplikasi';
+      return;
+    }
+    micMuted = next;
+    root.dataset.micMuted = String(micMuted);
+    meetingMicBtn.title = micMuted ? 'Buka bisukan mikrofon' : 'Bisukan mikrofon';
+    updateMeetingMic();
+  }).catch(() => { root.dataset.micMuted = 'unknown'; });
 });
+
+if (meetingCamBtn) {
+  meetingCamBtn.addEventListener('click', () => {
+    window.api.camToggle().then((r) => {
+      meetingCamBtn.title = r.hint || (r.ok ? 'Kamera meeting' : 'Kamera dikontrol di aplikasi rapat');
+    }).catch(() => { meetingCamBtn.title = 'Kamera dikontrol di aplikasi rapat'; });
+  });
+}
 
 /* ---- notice / meeting banner ----
    The main process widens the pill window while a banner overlays it

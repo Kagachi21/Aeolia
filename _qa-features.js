@@ -381,6 +381,37 @@ Module._load = function (request, parent, isMain) {
   const lrc3 = await lyricsMod.fetchLyrics('Tanpa Hasil Apapun');
   check('fetchLyrics: tidak ketemu -> null jujur', lrc3 === null, String(lrc3));
 
+  /* --- mute mic asli (main/micMute.ts) --- */
+  const micMod = require('./dist/main/micMute.js');
+  check('parse state: muted=true', micMod.parseMuteReply('muted=true') === true);
+  check('parse state: muted=false', micMod.parseMuteReply('muted=false') === false);
+  check('parse state: output aneh -> null', micMod.parseMuteReply('error kata powershell') === null);
+  const psCalls = [];
+  let psReplies = [];
+  micMod.setMuteExecutor(async (mode) => { psCalls.push(mode); return psReplies.shift() ?? 'error'; });
+  psReplies = ['muted=false'];
+  check('getMicMuted: false terbaca', (await micMod.getMicMuted()) === false && psCalls[0] === 'get',
+    JSON.stringify(psCalls));
+  psReplies = ['muted=false', 'muted=true'];
+  const t1 = await micMod.toggleMicMute();
+  check('toggleMicMute: baca dulu lalu bisukan, hasil true',
+    t1 === true && JSON.stringify(psCalls.slice(-2)) === JSON.stringify(['get', 'on']),
+    JSON.stringify(psCalls.slice(-2)));
+  psReplies = ['error'];
+  check('toggleMicMute: helper gagal -> null (tombol state unknown)', (await micMod.toggleMicMute()) === null);
+
+  /* --- kamera: shortcut per aplikasi meeting (main/camToggle.ts) --- */
+  const camMod = require('./dist/main/camToggle.js');
+  check('cam: Zoom -> Alt+V', camMod.camShortcutFor('zoom') === 'alt+v', String(camMod.camShortcutFor('zoom')));
+  check('cam: Teams -> Ctrl+Shift+M', camMod.camShortcutFor('msteams') === 'ctrl+shift+m');
+  check('cam: Meet -> Ctrl+E', camMod.camShortcutFor('meet') === 'ctrl+e');
+  check('cam: app tanpa shortcut -> null', camMod.camShortcutFor('discord') === null);
+  const camSend = camMod.camDecision('zoom', 'zoom');
+  check('cam: app fokus -> kirim shortcut', camSend.send === 'alt+v' && !camSend.hint, JSON.stringify(camSend));
+  const camHint = camMod.camDecision('Zoom', 'chrome');
+  check('cam: app tidak fokus -> hint jujur, tanpa kirim',
+    !camHint.send && (camHint.hint || '').includes('Zoom'), JSON.stringify(camHint));
+
   /* --- main process: notice:open protocol map + media IPC --- */
   const settingsLive = require('./dist/main/settings.js');
   await require('./dist/main/main.js');
@@ -421,6 +452,9 @@ Module._load = function (request, parent, isMain) {
   /* --- notice:reply = clipboard + deep-link open --- */
   check('IPC notice:reply terdaftar (handle)', ipcHandle.has('notice:reply'));
   check('IPC island:open terdaftar (klik notch expand)', ipcHandle.has('island:open'));
+  check('IPC mic:mute-state dan mic:mute-toggle terdaftar',
+    ipcHandle.has('mic:mute-state') && ipcHandle.has('mic:mute-toggle'));
+  check('IPC cam:toggle terdaftar', ipcHandle.has('cam:toggle'));
 
   /* --- miniMode chain: settings:set harus tercermin di island:update --- */
   const setMini = await ipcHandle.get('settings:set')(null, 'miniMode', 'cat');

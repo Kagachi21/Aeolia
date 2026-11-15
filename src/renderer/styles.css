@@ -1034,11 +1034,15 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
    reserves 86 logical px (10 gap + 76 capsule) in the pill window, so the
    gap is real: the desktop shows through between the two capsules. */
 #micPill { background: transparent; border: none; box-shadow: none; }
+/* Two capsules side by side: mic mute + camera shortcut. */
+#micPill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 100%;
+  padding: 0 8px;
+}
 .meeting-mic {
-  position: absolute;
-  top: 50%;
-  right: 10px;
-  transform: translateY(-50%);
   display: flex;
   align-items: center;
   gap: 5px;
@@ -1055,9 +1059,27 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   font-weight: 600;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 4px 12px rgba(0, 0, 0, 0.35);
 }
-/* Right-hand islands flip the capsule to the free side of the window. */
-#island[data-pos="right"] .meeting-mic,
-#island[data-pos="right-side"] .meeting-mic { right: auto; left: 10px; }
+.meeting-cam {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 68px;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 18px;
+  background: rgba(24, 28, 26, 0.94);
+  color: #8fc7ff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+.meeting-cam svg { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; }
+.meeting-cam .cam-label { color: #d3e6fb; }
+.meeting-cam:focus-visible { outline: 2px solid var(--accent, #e9eef7); outline-offset: 2px; }
+/* Right-hand islands keep the row order; the window itself flips sides. */
 .meeting-mic svg { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; }
 .meeting-mic .mic-label { flex: 1; min-width: 0; text-align: left; color: #d9efe0; }
 .meeting-mic .mic-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: #4cd964; }
@@ -1070,6 +1092,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
    island side and settles. */
 #island[data-mic="joining"] .meeting-mic .mic-label { display: none; }
 #island[data-mic="joining"] .meeting-mic { width: 58px; padding: 0 12px; }
+#island[data-mic="joining"] .meeting-cam { opacity: 0; pointer-events: none; }
 #island[data-mic="joining"] .meeting-mic .mic-dot { background: #ff9f0a; animation: mic-pulse 1s ease-in-out infinite; }
 #micPill:not([hidden]) { animation: mic-pop 320ms cubic-bezier(0.34, 1.56, 0.64, 1); }
 #island[data-pos="right"] #micPill:not([hidden]),

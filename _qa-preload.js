@@ -122,6 +122,9 @@ contextBridge.exposeInMainWorld('api', {
   playMedia: () => record('playMedia', null),
   bannerShow: (active) => record('bannerShow', active),
   islandOpen: () => record('islandOpen', null),
+  micMuteState: async () => true,
+  micMuteToggle: async () => { record('micMuteToggle', null); return true; },
+  camToggle: async () => { record('camToggle', null); return { ok: true }; },
   noticeReply: async (app, body, text) => {
     record('noticeReply', { app, body, text });
     return { opened: true };
