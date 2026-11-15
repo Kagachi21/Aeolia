@@ -83,12 +83,20 @@ export class Island {
   }
 
   /** Widen the pill while a notice/meeting banner overlays it; the renderer
-      owns the timing and calls this for the whole banner duration. */
+      owns the timing and calls this for the whole banner duration. A banner
+      also wakes the notch: the island expands for its duration, then returns. */
   setBanner(active: boolean): void {
     const next = active ? BANNER_EXTRA : null;
     if (this.bannerExtra === next) return;
     this.bannerExtra = next;
-    if (this.state === 'pill') this.win.setBounds(this.bounds('pill'));
+    if (this.state === 'mini') {
+      if (active) this.transition('pill');
+      return;
+    }
+    if (this.state === 'pill') {
+      if (active) this.win.setBounds(this.bounds('pill'));
+      else if (this.base === 'mini') this.transition('mini');
+    }
   }
 
   setBase(next: BaseState): void {

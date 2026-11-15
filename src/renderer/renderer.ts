@@ -230,7 +230,8 @@ meetingMicBtn.addEventListener('click', () => {
 /* ---- notice / meeting banner ----
    The main process widens the pill window while a banner overlays it
    (IPC banner:show); the renderer owns timing. Events queue FIFO, each
-   shows 4.2 s, and banners only ever show in the pill state. */
+   shows 4.2 s, and banners show in the pill AND the mini notch state
+   (the main process expands the notch for the banner, island.ts). */
 type BannerItem = { app: string; title: string; body: string; tone: 'meeting' | 'notice' };
 const bannerQueue: BannerItem[] = [];
 let bannerTimer: number | null = null;
@@ -238,6 +239,9 @@ let bannerGapTimer: number | null = null;
 let lastNoticeId = '';
 let lastMeetingSeen = false;
 let callAnimTimer: number | null = null;
+
+/* Banner-friendly states: pill, or the mini notch (expanded by main). */
+const bannerOk = (): boolean => root.dataset.state === 'pill' || root.dataset.state === 'mini';
 
 function hideBanner(): void {
   bannerLayer.hidden = true;
@@ -248,7 +252,7 @@ function hideBanner(): void {
 function showNextBanner(): void {
   if (bannerTimer !== null) { clearTimeout(bannerTimer); bannerTimer = null; }
   const item = bannerQueue.shift();
-  if (!item || root.dataset.state !== 'pill') {
+  if (!item || !bannerOk()) {
     if (!item) hideBanner();
     else bannerGapTimer = window.setTimeout(() => { bannerGapTimer = null; showNextBanner(); }, 400);
     return;
@@ -309,7 +313,7 @@ function renderStatus(status: IslandStatus): void {
   const wasOpen = lastState === 'open';
   lastState = status.state;
   root.dataset.state = status.state;
-  if (root.dataset.state === 'pill' && bannerQueue.length > 0 && bannerTimer === null && bannerGapTimer === null) {
+  if (bannerOk() && bannerQueue.length > 0 && bannerTimer === null && bannerGapTimer === null) {
     showNextBanner();
   }
   root.dataset.word = String(status.word);
@@ -323,7 +327,7 @@ function renderStatus(status: IslandStatus): void {
   root.dataset.meeting = String(Boolean(status.meeting));
   root.dataset.meetingMic = String(Boolean(status.meetingMicButton));
   const meetingNow = Boolean(status.meeting);
-  if (meetingNow && !lastMeetingSeen && root.dataset.state === 'pill') {
+  if (meetingNow && !lastMeetingSeen && bannerOk()) {
     const app = (status as IslandStatus).meetingApp || 'rapat';
     enqueueBanner({ app, title: 'Meeting mode', body: `${app} · notifikasi tetap masuk`, tone: 'meeting' });
     root.dataset.callAnim = 'true';
@@ -924,7 +928,7 @@ function renderCard(state: CardState): void {
   if (top && top.id && top.id !== lastNoticeId) {
     const firstSnapshot = lastNoticeId === '';
     lastNoticeId = top.id;
-    if (!firstSnapshot && root.dataset.state === 'pill') {
+    if (!firstSnapshot && bannerOk()) {
       enqueueBanner({ app: top.app, title: top.title || top.app, body: top.body, tone: 'notice' });
     }
   }

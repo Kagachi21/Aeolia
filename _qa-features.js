@@ -286,6 +286,22 @@ Module._load = function (request, parent, isMain) {
       await new Promise((r) => setTimeout(r, 90));
       check('setBase setelah peek: kembali ke notch 140x30',
         cur.width === 140 && cur.height === 30, `${cur.width}x${cur.height}`);
+      if (typeof isl.setBanner === 'function') {
+        isl.setBanner(true);
+        await new Promise((r) => setTimeout(r, 90));
+        check('banner saat notch: island terbangun ke pil + lebar banner (150+250, skala 100)',
+          cur.width === 400 && cur.height === 36 && isl.baseState === 'mini',
+          `${cur.width}x${cur.height} base=${isl.baseState}`);
+        isl.setBanner(false);
+        await new Promise((r) => setTimeout(r, 90));
+        check('banner selesai: notch kembali 140x30 (base mini)',
+          cur.width === 140 && cur.height === 30 && isl.baseState === 'mini',
+          `${cur.width}x${cur.height}`);
+      } else {
+        check('banner saat notch: island terbangun ke pil + lebar banner (150+250, skala 100)',
+          false, 'Island.setBanner belum ada');
+        check('banner selesai: notch kembali 140x30 (base mini)', false, 'Island.setBanner belum ada');
+      }
     } else {
       check('peek: notch mengembang ke pil 150x36 dan base tetap mini', false, 'Island.peek belum ada');
       check('setBase setelah peek: kembali ke notch 140x30', false, 'Island.peek belum ada');
