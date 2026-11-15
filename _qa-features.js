@@ -23,6 +23,7 @@ const ipcOn = new Map();
 const ipcHandle = new Map();
 const externalOpens = [];
 const mediaKeys = [];
+const wcSends = [];
 
 const electronMock = {
   app: {
@@ -40,7 +41,7 @@ const electronMock = {
         x: Math.round(this.options.x ?? 0), y: Math.round(this.options.y ?? 0),
         width: Math.round(this.options.width ?? 100), height: Math.round(this.options.height ?? 30),
       };
-      this.webContents = { send: () => {}, once: () => {}, on: () => {}, executeJavaScript: () => Promise.resolve(null) };
+      this.webContents = { send: (ch, payload) => wcSends.push({ ch, payload }), once: () => {}, on: () => {}, executeJavaScript: () => Promise.resolve(null) };
       this.destroyed = false;
     }
     setMinimumSize() {} setMaximumSize() {} setAlwaysOnTop() {} setVisibleOnAllWorkspaces() {}
@@ -66,6 +67,7 @@ const electronMock = {
   },
   shell: { openExternal: (url) => { externalOpens.push(url); } },
   dialog: { showOpenDialog: () => Promise.resolve({ canceled: true, filePaths: [] }) },
+  _wcSends: wcSends,
   net: { fetch: () => Promise.reject(new Error('offline in probe')) },
   desktopCapturer: { getSources: () => Promise.resolve([]) },
   session: { fromPartition: () => ({}) },
@@ -384,6 +386,17 @@ Module._load = function (request, parent, isMain) {
   /* --- notice:reply = clipboard + deep-link open --- */
   check('IPC notice:reply terdaftar (handle)', ipcHandle.has('notice:reply'));
   check('IPC island:open terdaftar (klik notch expand)', ipcHandle.has('island:open'));
+
+  /* --- miniMode chain: settings:set harus tercermin di island:update --- */
+  const setMini = await ipcHandle.get('settings:set')(null, 'miniMode', 'cat');
+  await Promise.resolve();
+  await new Promise((r) => setImmediate(r));
+  check('settings:set miniMode tersimpan (setValue balik settings)',
+    setMini && setMini.miniMode === 'cat', JSON.stringify(setMini && setMini.miniMode));
+  const lastUpdate = electronMock._wcSends.filter((s) => s.ch === 'island:update').pop();
+  check('island:update setelah save membawa miniMode cat',
+    Boolean(lastUpdate) && lastUpdate.payload.miniMode === 'cat',
+    JSON.stringify(lastUpdate && lastUpdate.payload.miniMode));
   const clipWrites = [];
   electronMock.clipboard.writeText = (t) => clipWrites.push(t);
   const replyKnown = await ipcHandle.get('notice:reply')(null, 'WhatsApp', 'duren', 'oke bentar');
