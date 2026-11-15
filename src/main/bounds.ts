@@ -61,8 +61,17 @@ export function boundsFor(
   const margin = Math.max(0, settings.edgeMargin);
   const right = display.bounds.x + display.bounds.width - size.width - margin;
   const left = display.bounds.x + margin;
+  // The reserved capsule strip must never move the island body: the body is
+  // anchored with its width WITHOUT micExtra (bannerExtra stays in, because a
+  // banner widens the body itself), so the strip always grows into free space.
+  // center/left keep the body where it was and the strip goes right of it;
+  // right/right-side anchor the window's right edge instead, which leaves the
+  // body flush with the screen edge and puts the strip on its left.
+  const anchorWidth = state === 'pill'
+    ? Math.round(((pillWidth ?? stored.width) + (bannerExtra ?? 0)) * scale)
+    : size.width;
 
-  let x = Math.round(display.bounds.x + (display.bounds.width - size.width) / 2);
+  let x = Math.round(display.bounds.x + (display.bounds.width - anchorWidth) / 2);
   switch (settings.islandPosition) {
     case 'left':
     case 'left-side':

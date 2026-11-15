@@ -1,8 +1,8 @@
 /* Kou - visual proof for the separate meeting capsules (throwaway probe).
    Renders the REAL compiled renderer (dist/renderer/index.html) in a
-   transparent BrowserWindow the size the main process would use, drives the
-   real preload seam, then measures the DOM and scans the captured pixels so
-   the proof is a number, not only a screenshot.
+   transparent BrowserWindow placed exactly where the REAL boundsFor() puts it,
+   drives the real preload seam, then measures the DOM and scans the captured
+   pixels so the proof is a number, not only a screenshot.
 
    Geometry is measured with a hit-test scan at mid height instead of
    getBoundingClientRect: the zoomed layers report zoom-relative rects, so the
@@ -16,6 +16,7 @@ const fs = require('node:fs');
 
 const root = __dirname;
 const SHOT_DIR = path.join(root, '.superpowers', 'shots');
+const { boundsFor } = require(path.join(root, 'dist', 'main', 'bounds.js'));
 
 /* Mirrors the defaults in src/main/settings.ts (pill 150x36) and the extra
    widths in src/main/bounds.ts: the pill window reserves MIC_PILL_EXTRA for
@@ -32,6 +33,16 @@ const check = (name, ok, detail) => {
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const js = (win, code) => win.webContents.executeJavaScript(code);
+
+/** Settings slice boundsFor() reads, so the probe uses the product geometry
+    instead of hand made numbers. */
+const pillSettings = (pos, scalePct) => ({
+  islandScale: scalePct, monitor: 'main', islandPosition: pos, edgeMargin: 4,
+  islandStyle: 'dynamic', cardWidth: 360,
+  pill: { width: PILL.width, height: PILL.height },
+  mini: { width: 150, height: 32 },
+  open: { width: 150, height: 40 },
+});
 
 function makeWindow(width, height) {
   return new BrowserWindow({
@@ -64,6 +75,32 @@ function flattenOverWhite(img) {
 function saveShots(img, name) {
   fs.writeFileSync(path.join(SHOT_DIR, `${name}.png`), img.toPNG());
   fs.writeFileSync(path.join(SHOT_DIR, `${name}-white.png`), flattenOverWhite(img).toPNG());
+}
+
+/** Stack captures on a common screen-x axis (one row per state) so the eye can
+    check that the island body did not move while the strip grew. */
+function saveAligned(rows, name) {
+  const minX = Math.min(...rows.map((r) => r.x)) - 24;
+  const maxX = Math.max(...rows.map((r) => r.x + r.img.getSize().width)) + 24;
+  const width = maxX - minX;
+  const rowH = Math.max(...rows.map((r) => r.img.getSize().height));
+  const gap = 10;
+  const height = rows.length * (rowH + gap) - gap;
+  const canvas = Buffer.alloc(width * height * 4);
+  rows.forEach((row, index) => {
+    const size = row.img.getSize();
+    const bmp = row.img.toBitmap();
+    const dx = row.x - minX;
+    const dy = index * (rowH + gap);
+    for (let y = 0; y < size.height; y += 1) {
+      bmp.copy(canvas, ((dy + y) * width + dx) * 4,
+        y * size.width * 4, (y + 1) * size.width * 4);
+    }
+  });
+  const img = nativeImage.createFromBitmap(canvas, { width, height });
+  fs.writeFileSync(path.join(SHOT_DIR, `${name}.png`), img.toPNG());
+  fs.writeFileSync(path.join(SHOT_DIR, `${name}-white.png`), flattenOverWhite(img).toPNG());
+  return { width, height, originX: minX };
 }
 
 /* One horizontal hit-test scan at mid height. Classifies every page pixel of
@@ -112,6 +149,13 @@ const SCAN = `(() => {
     pillOpacity: getComputedStyle(document.getElementById('pill')).opacity,
     bannerShown: island.dataset.banner === 'true',
   };
+})()`;
+
+/** The island body's own box, in page px. #island is never zoomed, so this
+    rect is exact at every island scale. */
+const BODY_RECT = `(() => {
+  const r = document.getElementById('island').getBoundingClientRect();
+  return { left: +r.left.toFixed(2), right: +r.right.toFixed(2), width: +r.width.toFixed(2) };
 })()`;
 
 /** Pixel report for the reserved strip: everything painted there must be one
@@ -163,29 +207,34 @@ function paintReport(img, m, label) {
 
 async function main() {
   fs.mkdirSync(SHOT_DIR, { recursive: true });
-  /* While the meeting banner is up the main process widens the pill window by
-     BANNER_EXTRA as well, so the probe starts at the real banner width and
-     shrinks to the pill width once the banner is gone. */
-  const win = makeWindow(PILL.width + MIC_EXTRA + BANNER_EXTRA, PILL.height);
+  const display = screen.getPrimaryDisplay();
+  const displayRight = display.bounds.x + display.bounds.width;
+  const win = makeWindow(PILL.width + MIC_EXTRA, PILL.height);
   await win.loadFile(path.join(root, 'dist', 'renderer', 'index.html'));
   /* document.elementFromPoint needs a rendered window, so the probe shows the
-     frameless transparent window inactive, tucked into the bottom right corner
-     of the work area. It never takes focus. */
-  const area = screen.getPrimaryDisplay().workArea;
-  win.setPosition(Math.round(area.x + area.width - PILL.width - MIC_EXTRA - BANNER_EXTRA - 8),
-    Math.round(area.y + area.height - PILL.height - 8));
+     frameless transparent window inactive. It never takes focus. */
   win.showInactive();
   await sleep(320);
 
-  /* Meeting starts: pill + mic button on, no media, clock in the notch mode.
-     The rising edge also queues the "Meeting mode" banner (real behaviour), so
-     the settled shot waits for it to clear. */
   const status = (extra) => js(win, `window.probe.emit('status', ${JSON.stringify(extra)}); true`);
-  await status({
-    state: 'pill', meeting: true, meetingMicButton: true, media: false,
-    mediaTitle: '', miniMode: 'clock', scaleEffective: 100, accent: '#e9eef7',
-    surface: 'Black', islandPosition: 'center', word: false, hiddenUntilHover: false,
+  const setPos = (pos) => js(win, `window.probe.emit('settings', { islandPosition: ${JSON.stringify(pos)} }); true`);
+  const meeting = (on) => status({
+    state: 'pill', meeting: on, meetingMicButton: true, media: false, mediaTitle: '',
+    miniMode: 'clock', scaleEffective: 100, accent: '#e9eef7', surface: 'Black',
+    word: false, hiddenUntilHover: false,
   });
+
+  const s100 = pillSettings('center', 100);
+  const offBounds = boundsFor('pill', s100);
+  const onBounds = boundsFor('pill', s100, undefined, undefined, MIC_EXTRA);
+  const bannerBounds = boundsFor('pill', s100, undefined, undefined, MIC_EXTRA, BANNER_EXTRA);
+  metricsLog.bounds = { off: offBounds, on: onBounds, banner: bannerBounds };
+
+  /* Meeting starts: pill + mic button on, no media. The rising edge also
+     queues the "Meeting mode" banner (real behaviour), so the window takes the
+     banner width first and returns to the plain pill width once it clears. */
+  win.setBounds(bannerBounds);
+  await meeting(true);
   await sleep(420);
 
   const joining = await js(win, SCAN);
@@ -202,10 +251,9 @@ async function main() {
     settled.micState === 'on' && settled.layerDisplay === 'flex'
       && settled.mic !== null && settled.cam !== null, settled.micState);
 
-  /* The banner owns the body for 4,2 s; the capsules already sit outside it.
-     Once it is gone the window returns to the plain pill width. */
+  /* The banner owns the body for 4,2 s; the capsules already sit outside it. */
   await sleep(3400);
-  win.setContentSize(PILL.width + MIC_EXTRA, PILL.height);
+  win.setBounds(onBounds);
   await sleep(320);
   const pill = await js(win, SCAN);
   const pillShot = await win.capturePage();
@@ -239,8 +287,11 @@ async function main() {
 
   /* Right-hand island: the body stays flush with the screen edge, the
      capsules move to the strip on its left. */
-  await js(win, `window.probe.emit('settings', { islandPosition: 'right' }); true`);
-  await sleep(360);
+  const sRight = pillSettings('right', 100);
+  const rightOn = boundsFor('pill', sRight, undefined, undefined, MIC_EXTRA);
+  await setPos('right');
+  win.setBounds(rightOn);
+  await sleep(400);
   const right = await js(win, SCAN);
   const rightShot = await win.capturePage();
   saveShots(rightShot, 'micpill-right');
@@ -254,13 +305,14 @@ async function main() {
     rightStrip.strongPixelsOutsideCapsules === 0,
     `strong=${rightStrip.strongPixelsOutsideCapsules} outsideMaxAlpha=${rightStrip.outsideMaxAlpha}`);
 
-  await js(win, `window.probe.emit('settings', { islandPosition: 'center' }); true`);
+  await setPos('center');
   await sleep(240);
 
-  /* Island scale 130%: the window is widened by boundsFor and #island is not
-     zoomed, so the inset has to be scaled too. */
+  /* Island scale 130%: boundsFor widens the window and #island is not zoomed,
+     so the inset has to be scaled too. */
   const zoom = 1.3;
-  win.setContentSize(Math.round((PILL.width + MIC_EXTRA) * zoom), Math.round(PILL.height * zoom));
+  const s130 = pillSettings('center', 130);
+  win.setBounds(boundsFor('pill', s130, undefined, undefined, MIC_EXTRA));
   await sleep(220);
   await status({ scaleEffective: 130 });
   await sleep(420);
@@ -278,9 +330,10 @@ async function main() {
     `body=${big.body.from}..${big.body.to} gap=${bigStrip.gapWidth} strong=${bigStrip.strongPixelsOutsideCapsules}`);
 
   /* Idle: the window shrinks back and the layer must really be hidden. */
-  win.setContentSize(PILL.width, PILL.height);
+  win.setBounds(offBounds);
   await sleep(220);
-  await status({ meeting: false, scaleEffective: 100 });
+  await status({ scaleEffective: 100 });
+  await meeting(false);
   await sleep(420);
   const idle = await js(win, SCAN);
   const idleShot = await win.capturePage();
@@ -300,6 +353,64 @@ async function main() {
       && idle.mic === null && idle.cam === null
       && Math.abs((idle.body.to - idle.body.from + 1) - idle.innerWidth) <= 1.5,
     `hidden=${idle.layerHidden} display=${idle.layerDisplay} mic=${JSON.stringify(idle.mic)} body=${idle.body.from}..${idle.body.to}/${idle.innerWidth} paintedPixels=${idlePainted}`);
+
+  /* The capsule strip must NOT move the island body: the probe places the
+     window exactly where boundsFor says (meeting off vs on) and compares the
+     body's screen x. Rows are stacked on a shared screen-x axis for the eye. */
+  const moves = {};
+  for (const pos of ['center', 'left', 'right']) {
+    const st = pillSettings(pos, 100);
+    const bOff = boundsFor('pill', st);
+    const bOn = boundsFor('pill', st, undefined, undefined, MIC_EXTRA);
+
+    await setPos(pos);
+    win.setBounds(bOff);
+    await meeting(false);
+    await sleep(380);
+    const rectOff = await js(win, BODY_RECT);
+    const shotOff = await win.capturePage();
+
+    win.setBounds(bOn);
+    await meeting(true);
+    /* Let the "Meeting mode" banner clear so both rows show the same pill
+       content and only the strip differs. */
+    await sleep(4400);
+    const rectOn = await js(win, BODY_RECT);
+    const shotOn = await win.capturePage();
+
+    const row = {
+      pos,
+      offWindow: [bOff.x, bOff.width],
+      onWindow: [bOn.x, bOn.width],
+      offBodyScreenX: bOff.x + rectOff.left,
+      onBodyScreenX: bOn.x + rectOn.left,
+      offBodyScreenRight: bOff.x + rectOff.right,
+      onBodyScreenRight: bOn.x + rectOn.right,
+      bodyWidthOff: rectOff.width,
+      bodyWidthOn: rectOn.width,
+      rightOverflow: bOn.x + bOn.width - displayRight,
+      leftOverflow: display.bounds.x - bOn.x,
+    };
+    moves[pos] = row;
+    const aligned = saveAligned([{ img: shotOff, x: bOff.x }, { img: shotOn, x: bOn.x }],
+      `micpill-align-${pos}`);
+    row.alignedShot = `micpill-align-${pos}-white.png`;
+    row.alignedSize = [aligned.width, aligned.height];
+
+    check(`badan island TIDAK bergeser saat rapat (posisi ${pos})`,
+      Math.abs(row.offBodyScreenX - row.onBodyScreenX) <= 1
+        && Math.abs(row.offBodyScreenRight - row.onBodyScreenRight) <= 1,
+      `x off=${row.offBodyScreenX} on=${row.onBodyScreenX} | kanan off=${row.offBodyScreenRight} on=${row.onBodyScreenRight} | window off=${bOff.x}/${bOff.width} on=${bOn.x}/${bOn.width}`);
+    check(`strip hanya tumbuh ke sisi bebas (posisi ${pos})`,
+      pos === 'right'
+        ? bOn.x < bOff.x && bOn.x + bOn.width === bOff.x + bOff.width
+        : bOn.x === bOff.x && bOn.x + bOn.width > bOff.x + bOff.width,
+      `window off=${bOff.x}..${bOff.x + bOff.width} on=${bOn.x}..${bOn.x + bOn.width}`);
+    check(`tidak melewati tepi layar (posisi ${pos})`,
+      row.rightOverflow <= 0 && row.leftOverflow <= 0,
+      `rightOverflow=${row.rightOverflow} leftOverflow=${row.leftOverflow} display=${display.bounds.x}..${displayRight}`);
+  }
+  metricsLog.noMove = moves;
 
   fs.writeFileSync(path.join(SHOT_DIR, 'micpill-metrics.json'), JSON.stringify(metricsLog, null, 2), 'utf8');
   win.destroy();
