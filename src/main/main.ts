@@ -220,6 +220,7 @@ function pushStatus(): void {
     hiddenUntilHover: s.hiddenUntilHover,
     openAction: s.openAction,
     meeting: isMeeting(),
+    meetingApp: getExtras().meetingApp,
     miniMode: s.miniMode,
     meetingMicButton: s.meetingMicButton,
     islandScale: s.islandScale,
