@@ -429,6 +429,18 @@ async function rendererProbe() {
   const miniHide = await js(win, `getComputedStyle(document.getElementById('island')).opacity`);
   check('Regresi mini mode hide benar-benar transparan', parseFloat(miniHide) === 0, String(miniHide));
 
+  /* ---- island scale reaches the notch: #mini layer zoomed like the pill ---- */
+  await js(win, `window.probe.emit('status', { state: 'mini', miniMode: 'clock', scaleEffective: 130 }); true`);
+  await sleep(90);
+  const miniZoom = await js(win, `(() => ({ mini: document.getElementById('mini').style.zoom,
+    pill: document.getElementById('pill').style.zoom }))()`);
+  check('scale 130: layer mini di-zoom 1.3 (font & kucing ikut ukuran island)',
+    miniZoom.mini === '1.3' && miniZoom.pill === '1.3', JSON.stringify(miniZoom));
+  await js(win, `window.probe.emit('status', { state: 'mini', miniMode: 'clock', scaleEffective: 100 }); true`);
+  await sleep(90);
+  const miniZoomReset = await js(win, `document.getElementById('mini').style.zoom`);
+  check('scale 100: zoom mini dihapus lagi (property dibersihkan)', miniZoomReset === '', String(miniZoomReset));
+
   await js(win, `window.probe.emit('settings', { worshipImsakIftar: true }); true`);
   await sleep(140);
   const worship = await js(win, `(() => ({ markers: document.getElementById('prayTimes').classList.contains('with-markers'),

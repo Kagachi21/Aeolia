@@ -77,13 +77,15 @@ function applyBarOrder(): void {
 
 /* ---- island scale ----
    The window is resized by the main process (bounds.ts resolves 'auto'
-   against the display width). Here the pill and card CONTENT are scaled to
-   fill the larger window. Auto resolves to arbitrary percents, so the zoom
-   is written through the CSSOM (allowed; the CSP only blocks style
+   against the display width). Here the pill, notch and card CONTENT are
+   scaled to fill the larger window. Auto resolves to arbitrary percents, so
+   the zoom is written through the CSSOM (allowed; the CSP only blocks style
    attributes in markup). The inverse width/height cancels the zoom of the
-   inset:0 layers so they still fill the window exactly. The 14 px mini notch
-   is never scaled. openLayer is the existing card layer const below. */
+   inset:0 layers so they still fill the window exactly. The mini notch is
+   scaled too, so its clock and cat follow the same island size.
+   openLayer is the existing card layer const below. */
 const pillLayer = document.getElementById('pill') as HTMLElement;
+const miniLayer = document.getElementById('mini') as HTMLElement;
 const micPillLayer = document.getElementById('micPill') as HTMLElement;
 const bannerLayer = document.getElementById('banner') as HTMLElement;
 const bnAvatar = document.getElementById('bnAvatar') as HTMLElement;
@@ -92,7 +94,7 @@ const bnBody = document.getElementById('bnBody') as HTMLElement;
 
 function applyScale(): void {
   const zoom = Math.min(1.3, Math.max(0.75, (Number(root.dataset.scale) || 100) / 100));
-  for (const el of [pillLayer, micPillLayer, bannerLayer, openLayer]) {
+  for (const el of [pillLayer, miniLayer, micPillLayer, bannerLayer, openLayer]) {
     if (zoom === 1) {
       el.style.removeProperty('zoom');
       el.style.removeProperty('width');

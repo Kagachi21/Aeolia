@@ -47,14 +47,14 @@ export function boundsFor(
 ): Rect {
   const display = activeDisplay(settings);
   const stored = settings[state];
-  // islandScale enlarges the pill and the card; the 14 px mini notch stays
-  // unscaled so the click-through tab-strip zone keeps its exact geometry.
-  const scale = state === 'mini' ? 1 : effectiveScalePct(settings) / 100;
+  // islandScale enlarges every state, the notch included, so the mini clock
+  // and cat grow with the same slider that sizes the pill and the card.
+  const scale = effectiveScalePct(settings) / 100;
   const size = state === 'open'
     ? { width: Math.round(settings.cardWidth * scale), height: Math.round((openHeight ?? stored.height) * scale) }
     : state === 'pill'
       ? { width: Math.round(((pillWidth ?? stored.width) + (micExtra ?? 0) + (bannerExtra ?? 0)) * scale), height: Math.round(stored.height * scale) }
-      : stored;
+      : { width: Math.round(stored.width * scale), height: Math.round(stored.height * scale) };
   const margin = Math.max(0, settings.edgeMargin);
   const right = display.bounds.x + display.bounds.width - size.width - margin;
   const left = display.bounds.x + margin;

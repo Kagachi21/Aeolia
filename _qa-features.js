@@ -200,7 +200,7 @@ Module._load = function (request, parent, isMain) {
   /* --- bounds: island scale --- */
   const { boundsFor, effectiveScalePct } = require('./dist/main/bounds.js');
   const base = { cardWidth: 360, edgeMargin: 4, islandPosition: 'center', monitor: 'main', islandStyle: 'dynamic' };
-  const sizes = { pill: { width: 150, height: 36 }, mini: { width: 150, height: 32 }, open: { width: 360, height: 200 } };
+  const sizes = { pill: { width: 150, height: 36 }, mini: { width: 140, height: 30 }, open: { width: 360, height: 200 } };
   write({ ...base, islandScale: 100, ...sizes });
   const basePill = boundsFor('pill', freshSettings().loadSettings());
   const baseOpen = boundsFor('open', freshSettings().loadSettings());
@@ -213,8 +213,8 @@ Module._load = function (request, parent, isMain) {
     `${basePill.width} -> ${bigPill.width}`);
   check('scale 130: kartu melebar 360 -> 468', bigOpen.width === Math.round(360 * 1.3),
     `${baseOpen.width} -> ${bigOpen.width}`);
-  check('scale 130: notch mini tetap 150x32 (click-through geometry utuh)',
-    bigMini.width === baseMini.width && bigMini.height === 32,
+  check('scale 130: notch mini ikut membesar 140x30 -> 182x39 (font & kucing ikut skala)',
+    bigMini.width === Math.round(140 * 1.3) && bigMini.height === Math.round(30 * 1.3),
     `${bigMini.width}x${bigMini.height}`);
   write({ ...base, islandScale: 75, ...sizes });
   const smallPill = boundsFor('pill', freshSettings().loadSettings());
@@ -250,7 +250,8 @@ Module._load = function (request, parent, isMain) {
   const micOpen = boundsFor('open', freshSettings().loadSettings(), 200, undefined, 86);
   check('micExtra tidak mengubah kartu terbuka', micOpen.width === Math.round(360 * 1.3), micOpen.width);
   const micMini = boundsFor('mini', freshSettings().loadSettings(), undefined, undefined, 86);
-  check('micExtra tidak mengubah notch mini', micMini.width === 150 && micMini.height === 32,
+  check('micExtra tidak mengubah notch mini (hanya diskalakan)',
+    micMini.width === Math.round(140 * 1.3) && micMini.height === Math.round(30 * 1.3),
     `${micMini.width}x${micMini.height}`);
 
   /* --- banner extra width (6th param, pill only) --- */
