@@ -330,14 +330,14 @@ input:disabled {
 
 .mini-clock {
   display: none;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: #e9eef7;
 }
 .mini-date {
   display: none;
-  font-size: 7px;
+  font-size: 8px;
   font-weight: 600;
   color: #b6bdcc;
 }

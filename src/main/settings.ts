@@ -99,7 +99,7 @@ const DEFAULTS: Settings = {
   animationMs: 250,
   pollIntervalMs: 500,
   hoverIdleResetMs: 60,
-  mini: { width: 150, height: 32 },
+  mini: { width: 112, height: 26 },
   pill: { width: 150, height: 36 },
   open: { width: 360, height: 92 },
 
@@ -221,9 +221,11 @@ function merge(base: Settings, raw: Partial<Settings>): Settings {
   merged.open.height = base.open.height;
   merged.pill.height = base.pill.height;
   merged.pill.width = Math.min(180, Math.max(110, Number(merged.pill.width) || base.pill.width));
-  // Sizes saved by builds before the macOS-like defaults existed migrate once;
-  // genuinely customized sizes are left alone.
-  if (raw.mini && raw.mini.width === 64 && raw.mini.height === 14) merged.mini = { ...base.mini };
+  // Sizes saved by earlier default builds migrate once; genuinely customized
+  // sizes are left alone. 64x14 was the sliver notch, 150x32 the oversized
+  // notch both replaced by the small 112x26 default.
+  if (raw.mini && ((raw.mini.width === 64 && raw.mini.height === 14)
+    || (raw.mini.width === 150 && raw.mini.height === 32))) merged.mini = { ...base.mini };
   if (raw.pill && raw.pill.width === 138) merged.pill.width = base.pill.width;
   merged.cardWidth = Math.min(520, Math.max(320, Number(merged.cardWidth) || base.cardWidth));
   merged.hoverIdleResetMs = Math.min(600, Math.max(0, Number(merged.hoverIdleResetMs) || 0));

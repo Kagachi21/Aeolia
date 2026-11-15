@@ -153,15 +153,19 @@ Module._load = function (request, parent, isMain) {
   write({ glassLevel: 'tebal' });
   check('glassLevel non-angka kembali default 55', freshSettings().loadSettings().glassLevel === 55);
 
-  /* --- macOS-like default sizes + old-default migration --- */
-  check('default mini ikut macOS notch: 150x32', gl.mini.width === 150 && gl.mini.height === 32,
-    JSON.stringify(gl.mini));
+  /* --- small notch default sizes + old-default migration --- */
+  check('default mini notch kecil: 112x26 (tidak menutupi tab browser)',
+    gl.mini.width === 112 && gl.mini.height === 26, JSON.stringify(gl.mini));
   check('default pill ikut Dynamic Island: 150x36', gl.pill.width === 150 && gl.pill.height === 36,
     JSON.stringify(gl.pill));
   write({ mini: { width: 64, height: 14 }, pill: { width: 138, height: 28 } });
   const mig = freshSettings().loadSettings();
-  check('migrasi: mini default lama 64x14 -> 150x32', mig.mini.width === 150 && mig.mini.height === 32,
+  check('migrasi: mini default lama 64x14 -> 112x26', mig.mini.width === 112 && mig.mini.height === 26,
     JSON.stringify(mig.mini));
+  write({ mini: { width: 150, height: 32 }, pill: { width: 138, height: 28 } });
+  const migBig = freshSettings().loadSettings();
+  check('migrasi: mini default 150x32 (build batch B) -> 112x26',
+    migBig.mini.width === 112 && migBig.mini.height === 26, JSON.stringify(migBig.mini));
   check('migrasi: pill default lama 138 -> 150', mig.pill.width === 150, JSON.stringify(mig.pill));
   write({ mini: { width: 200, height: 40 }, pill: { width: 160, height: 28 } });
   const kept = freshSettings().loadSettings();
