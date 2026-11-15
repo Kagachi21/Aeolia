@@ -263,6 +263,32 @@ Module._load = function (request, parent, isMain) {
   const bannerOpen = boundsFor('open', freshSettings().loadSettings(), 200, undefined, undefined, 250);
   check('bannerExtra tidak mengubah kartu terbuka', bannerOpen.width === Math.round(360 * 1.3), bannerOpen.width);
 
+  /* --- regresi 2026-11-15: strip kapsul mic TIDAK menggeser badan island ---
+     Window tetap melebar MIC_PILL_EXTRA, tapi #island memberi strip itu
+     kembali lewat --mic-extra, jadi badan di-anchor dengan lebar TANPA
+     micExtra: center/left tidak bergeser sama sekali, right menggeser x ke
+     kiri tepat selebar strip dan tepi kanannya tetap di tempat. */
+  const MIC_EXTRA = 172;
+  for (const scale of [100, 130, 75]) {
+    for (const pos of ['center', 'left', 'right']) {
+      write({ ...base, islandPosition: pos, islandScale: scale, ...sizes });
+      const off = boundsFor('pill', freshSettings().loadSettings());
+      write({ ...base, islandPosition: pos, islandScale: scale, ...sizes });
+      const on = boundsFor('pill', freshSettings().loadSettings(), undefined, undefined, MIC_EXTRA);
+      const extraPx = on.width - off.width;
+      check(`micExtra ${MIC_EXTRA} @${scale}% (${pos}): window melebar ${Math.round(MIC_EXTRA * (scale / 100))} px`,
+        extraPx === Math.round(MIC_EXTRA * (scale / 100)), `${off.width} -> ${on.width} (delta ${extraPx})`);
+      if (pos === 'right') {
+        check(`micExtra @${scale}% (right): x bergeser kiri tepat selebar strip, tepi kanan tetap`,
+          off.x - on.x === extraPx && on.x + on.width === off.x + off.width,
+          `x off=${off.x} on=${on.x} | kanan off=${off.x + off.width} on=${on.x + on.width} | extra=${extraPx}`);
+      } else {
+        check(`micExtra @${scale}% (${pos}): x badan island TIDAK bergeser`,
+          on.x === off.x, `x off=${off.x} on=${on.x}`);
+      }
+    }
+  }
+
   /* --- Island.peek: hover pada notch mengembang tanpa kehilangan base --- */
   {
     write({ ...base, islandScale: 100, animationMs: 16, ...sizes });
@@ -355,7 +381,20 @@ Module._load = function (request, parent, isMain) {
   check('pickSynced: ambil syncedLyrics pertama yang ada',
     lyricsMod.pickSynced([{ syncedLyrics: null }, { syncedLyrics: '[00:05] hai' }]) === '[00:05] hai',
     JSON.stringify(lyricsMod.pickSynced([{ syncedLyrics: null }, { syncedLyrics: '[00:05] hai' }])));
-  check('pickSynced: tanpa hasil -> null', lyricsMod.pickSynced([{ plainLyrics: 'x' }]) === null);
+  /* Old expectation was null for a plain-only result. That contradicts the
+     current product rule (plain text is a valid fallback, the renderer scrolls
+     it at 4 s per line and labels it "teks polos"), so it is restated here
+     instead of being dropped: synced still wins, plain is the fallback, and a
+     result with no lyric at all stays null. */
+  check('pickSynced: hanya teks polos -> dipakai sebagai fallback',
+    lyricsMod.pickSynced([{ plainLyrics: 'baris polos' }]) === 'baris polos',
+    JSON.stringify(lyricsMod.pickSynced([{ plainLyrics: 'baris polos' }])));
+  check('pickSynced: synced menang atas plain',
+    lyricsMod.pickSynced([{ plainLyrics: 'polos' }, { syncedLyrics: '[00:03] hai' }]) === '[00:03] hai',
+    JSON.stringify(lyricsMod.pickSynced([{ plainLyrics: 'polos' }, { syncedLyrics: '[00:03] hai' }])));
+  check('pickSynced: tanpa lirik sama sekali -> null',
+    lyricsMod.pickSynced([{}]) === null && lyricsMod.pickSynced([]) === null,
+    JSON.stringify([lyricsMod.pickSynced([{}]), lyricsMod.pickSynced([])]));
   const lyricFetches = [];
   let lyricReplies = [];
   electronMock.net.fetch = async (url) => {
@@ -380,6 +419,10 @@ Module._load = function (request, parent, isMain) {
   lyricReplies = [{ ok: true, json: async () => [] }];
   const lrc3 = await lyricsMod.fetchLyrics('Tanpa Hasil Apapun');
   check('fetchLyrics: tidak ketemu -> null jujur', lrc3 === null, String(lrc3));
+  lyricReplies = [{ ok: true, json: async () => ({ syncedLyrics: null, plainLyrics: 'baris satu\nbaris dua' }) }];
+  const lrc4 = await lyricsMod.fetchLyrics('Penyanyi Y - Hanya Teks');
+  check('fetchLyrics: get hanya punya plainLyrics -> teks polos dipakai',
+    lrc4 === 'baris satu\nbaris dua', String(lrc4));
 
   /* --- mute mic asli (main/micMute.ts) --- */
   const micMod = require('./dist/main/micMute.js');
@@ -475,6 +518,61 @@ Module._load = function (request, parent, isMain) {
   const replyUnknown = await ipcHandle.get('notice:reply')(null, 'Aplikasi Anonim', 'x', 'hai');
   check('notice:reply aplikasi tanpa protokol: jujur opened:false', replyUnknown.opened === false,
     JSON.stringify(replyUnknown));
+
+  /* --- lagu jalan menahan pill: notch tidak menelan kontrol musik ---
+     Driven through the real poller (pollIntervalMs 500) and the real 2 s
+     pollMedia timer; only readMedia and the foreground window are stubs. The
+     mock cursor sits on the island, so it is parked off screen first, otherwise
+     the hover timer keeps the card open and the base state never settles. */
+  const restoreCursor = electronMock.screen.getCursorScreenPoint;
+  electronMock.screen.getCursorScreenPoint = () => ({ x: 5, y: 900 });
+  const lastIslandState = () => {
+    const u = electronMock._wcSends.filter((s) => s.ch === 'island:update').pop();
+    return u && u.payload.state;
+  };
+  const restoreActiveWindow = stubs.activeWindow.getActiveWindow;
+  settingsLive.saveSettings({ ...settingsLive.current(), miniTrigger: 'maximized' });
+  stubs.activeWindow.getActiveWindow = () => ({
+    process: 'chrome', title: 'QA', maximized: true, fullscreen: false,
+    rect: { x: 0, y: 0, width: 1920, height: 1080 },
+  });
+  await new Promise((r) => setTimeout(r, 1400));
+  check('window maximized tanpa lagu -> island mengecil ke notch', lastIslandState() === 'mini',
+    String(lastIslandState()));
+  stubs.media.readMedia = () => ({ playing: true, title: 'Nirvana - Smells Like Teen Spirit' });
+  await new Promise((r) => setTimeout(r, 3200));
+  check('lagu jalan + window maximized -> pill tetap terbuka', lastIslandState() === 'pill',
+    String(lastIslandState()));
+  stubs.media.readMedia = () => ({ playing: false, title: '' });
+  await new Promise((r) => setTimeout(r, 3200));
+  check('lagu berhenti -> island kembali mengecil ke notch', lastIslandState() === 'mini',
+    String(lastIslandState()));
+  stubs.activeWindow.getActiveWindow = restoreActiveWindow;
+  settingsLive.saveSettings({ ...settingsLive.current(), miniTrigger: 'fullscreen' });
+
+  /* --- openAction mengikuti musik: kartu dibuka langsung ke tab Music --- */
+  const lastIslandUpdate = () => electronMock._wcSends.filter((s) => s.ch === 'island:update').pop();
+  check('tanpa lagu: openAction tetap dari settings',
+    Boolean(lastIslandUpdate()) && lastIslandUpdate().payload.openAction === settingsLive.current().openAction,
+    String(lastIslandUpdate() && lastIslandUpdate().payload.openAction));
+  /* readMedia is stubbed, so the real 2 s pollMedia timer is what flips the
+     main process into "media playing"; nothing is faked past that point. */
+  stubs.media.readMedia = () => ({ playing: true, title: 'Nirvana - Smells Like Teen Spirit' });
+  await new Promise((r) => setTimeout(r, 2400));
+  const playingUpdate = lastIslandUpdate();
+  check('pollMedia: lagu jalan -> island:update membawa media true',
+    Boolean(playingUpdate) && playingUpdate.payload.media === true
+      && playingUpdate.payload.mediaTitle === 'Nirvana - Smells Like Teen Spirit',
+    JSON.stringify(playingUpdate && { media: playingUpdate.payload.media, title: playingUpdate.payload.mediaTitle }));
+  check('lagu jalan: openAction jadi music', playingUpdate.payload.openAction === 'music',
+    String(playingUpdate.payload.openAction));
+  await ipcHandle.get('island:open')(null);
+  await new Promise((r) => setImmediate(r));
+  const openUpdate = lastIslandUpdate();
+  check('kartu dibuka saat lagu jalan -> state open + openAction music',
+    Boolean(openUpdate) && openUpdate.payload.state === 'open' && openUpdate.payload.openAction === 'music',
+    JSON.stringify(openUpdate && { state: openUpdate.payload.state, openAction: openUpdate.payload.openAction }));
+  electronMock.screen.getCursorScreenPoint = restoreCursor;
 
   const failed = results.filter((r) => !r.ok);
   console.log(`\nQA_FEATURES ${results.length - failed.length}/${results.length} PASS`);

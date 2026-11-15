@@ -1170,7 +1170,6 @@ const musicTimeEnd = document.getElementById('musicTimeEnd') as HTMLSpanElement;
 const musicPlayBtn = document.getElementById('musicPlay') as HTMLButtonElement;
 const musicVolSlider = document.getElementById('musicVol') as HTMLInputElement;
 const musicArt = document.getElementById('musicArt') as HTMLElement;
-const musicViz = document.getElementById('musicViz') as HTMLElement;
 
 document.getElementById('musicPrev')?.addEventListener('click', () => window.api.prevMedia());
 document.getElementById('musicNext')?.addEventListener('click', () => window.api.nextMedia());
@@ -1214,7 +1213,6 @@ function paintMusic(): void {
   musicCard.dataset.playing = String(playing);
   const vizMode = root.dataset.viz ?? 'pixels';
   mediaViz.setAttribute('data-viz', vizMode);
-  musicViz.setAttribute('data-viz', vizMode);
   musicProgress.setAttribute('data-style', root.dataset.musicProgress ?? 'Simple');
   musicArt.dataset.bg = root.dataset.musicBg ?? 'album';
 

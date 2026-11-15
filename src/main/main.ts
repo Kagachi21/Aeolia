@@ -222,7 +222,7 @@ function pushStatus(): void {
     islandPosition: s.islandPosition,
     visibleTabs: s.visibleTabs,
     hiddenUntilHover: s.hiddenUntilHover,
-    openAction: s.openAction,
+    openAction: mediaPlaying ? 'music' : s.openAction,
     meeting: isMeeting(),
     meetingApp: getExtras().meetingApp,
     miniMode: s.miniMode,
@@ -365,7 +365,9 @@ function pollActiveWindow(): void {
   if (settings.miniTrigger === 'busy') shrinks = info.fullscreen || busyForDelay;
   else if (settings.miniTrigger === 'maximized') shrinks = info.fullscreen || info.maximized;
   else shrinks = info.fullscreen || (settings.slimStrip && info.maximized);
-  const hide = !miniOff && shrinks;
+  // A playing track keeps the full pill awake (the notch hides the controls),
+  // but a fullscreen app still wins so the island never covers a video.
+  const hide = !miniOff && shrinks && (!mediaPlaying || info.fullscreen);
   const nextBase: 'mini' | 'pill' = hide ? 'mini' : 'pill';
   island.setBase(nextBase);
 

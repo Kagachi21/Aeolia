@@ -15,14 +15,21 @@ export function trackParts(mediaTitle: string): { title: string; artist: string 
   return { artist: '', title: t };
 }
 
-/** First result that actually carries synced LRC; null when none do. */
+/** Synced LRC when a result carries it, else the first plain lyric text, else
+    null. The renderer scrolls plain text on a fixed 4 s per line clock and
+    labels it "teks polos", so a track lrclib knows only as text still sings. */
 export function pickSynced(results: unknown): string | null {
   if (!Array.isArray(results)) return null;
+  let plain: string | null = null;
   for (const r of results as Array<Record<string, unknown>>) {
     const s = r && typeof r.syncedLyrics === 'string' ? r.syncedLyrics : '';
     if (s.includes('[')) return s;
+    if (plain === null) {
+      const p = r && typeof r.plainLyrics === 'string' ? r.plainLyrics.trim() : '';
+      if (p) plain = p;
+    }
   }
-  return null;
+  return plain;
 }
 
 export async function fetchLyrics(mediaTitle: string): Promise<string | null> {
@@ -40,6 +47,7 @@ export async function fetchLyrics(mediaTitle: string): Promise<string | null> {
       if (r.ok) {
         const j = (await r.json()) as Record<string, unknown>;
         if (typeof j.syncedLyrics === 'string' && j.syncedLyrics.includes('[')) lrc = j.syncedLyrics;
+        else if (typeof j.plainLyrics === 'string' && j.plainLyrics.trim()) lrc = j.plainLyrics.trim();
       }
     }
     if (!lrc) {
