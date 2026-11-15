@@ -1176,25 +1176,54 @@ const musicArt = document.getElementById('musicArt') as HTMLElement;
 /* Cover palette: only three hex strings cross the IPC boundary. A reply that
    lands after the user skipped to the next song is dropped by title, and the
    colours are cleared as soon as the title changes, so one song's glow never
-   paints over the next one while its lookup is still in flight. */
+   paints over the next one while its lookup is still in flight. When no cover
+   was found the card still gets colour: one of six deep palettes keyed off the
+   same g0..g5 hash the album art uses, so offline and unknown songs also
+   change colour with the track. */
 type CardColors = { c1: string; c2: string; c3: string } | null;
 const MC_VARS = ['--mc-1', '--mc-2', '--mc-3'] as const;
+/* Deep, saturated versions of the six g0..g5 art gradients. Dark enough to
+   keep AA text, coloured enough to read as the album behind the card. */
+const FALLBACK_PALETTES: Array<{ c1: string; c2: string; c3: string }> = [
+  { c1: '#8a3b2a', c2: '#6b2350', c3: '#241436' }, // g0 sunset -> plum
+  { c1: '#2a6a8a', c2: '#253c78', c3: '#161c3c' }, // g1 cyan -> navy
+  { c1: '#8a6c2e', c2: '#7a3a20', c3: '#2f1512' }, // g2 gold -> rust
+  { c1: '#3a7a48', c2: '#1f5c42', c3: '#11291f' }, // g3 green -> forest
+  { c1: '#6a3f8a', c2: '#432a86', c3: '#1b123c' }, // g4 lilac -> indigo
+  { c1: '#2a7a7a', c2: '#1f4278', c3: '#101f38' }, // g5 teal -> blue
+];
 let lastPaintedTitle: string | null = null;
+
+function currentSong(): string {
+  const raw = mediaTrack.dataset.title ?? '';
+  const sep = raw.indexOf(' - ');
+  return sep > 0 ? raw.slice(sep + 3).trim() : raw;
+}
 
 function clearTrackColors(): void {
   for (const name of MC_VARS) musicCard.style.removeProperty(name);
   musicCard.dataset.dynamic = 'false';
 }
 
+function writePalette(p: { c1: string; c2: string; c3: string }, state: string): void {
+  musicCard.style.setProperty('--mc-1', p.c1);
+  musicCard.style.setProperty('--mc-2', p.c2);
+  musicCard.style.setProperty('--mc-3', p.c3);
+  musicCard.dataset.dynamic = state;
+}
+
+function applyFallbackColors(): void {
+  const index = Number(artGradientClass(currentSong()).slice(1));
+  writePalette(FALLBACK_PALETTES[index] ?? FALLBACK_PALETTES[0], 'fallback');
+}
+
 function applyTrackColors(colors: CardColors): void {
-  if (!colors || root.dataset.musicBg !== 'album' || root.dataset.media !== 'true') {
+  if (root.dataset.musicBg !== 'album' || root.dataset.media !== 'true') {
     clearTrackColors();
     return;
   }
-  musicCard.style.setProperty('--mc-1', colors.c1);
-  musicCard.style.setProperty('--mc-2', colors.c2);
-  musicCard.style.setProperty('--mc-3', colors.c3);
-  musicCard.dataset.dynamic = 'true';
+  if (!colors) { applyFallbackColors(); return; }
+  writePalette(colors, 'true');
 }
 
 window.api.onMusicColors((p) => {
@@ -1231,17 +1260,19 @@ function artGradientClass(title: string): string {
 function paintMusic(): void {
   const playing = root.dataset.media === 'true';
   const raw = mediaTrack.dataset.title ?? '';
-  // A new song (or a stopped player) must not inherit the previous cover's
-  // glow: wait for this title's own lookup before switching the gradient on.
-  if (lastPaintedTitle !== raw || !playing || root.dataset.musicBg !== 'album') {
-    clearTrackColors();
-    lastPaintedTitle = raw;
-  }
   // "Artist - Song" splits like the reference card; a bare title keeps the
   // generic source line so nothing is invented.
   const sep = raw.indexOf(' - ');
   const song = sep > 0 ? raw.slice(sep + 3).trim() : raw;
   const artist = sep > 0 ? raw.slice(0, sep).trim() : '';
+  // A new song (or a stopped player) must not inherit the previous cover's
+  // glow. It starts on the deterministic fallback palette at once, so an
+  // unknown song or an offline lookup is never an uncoloured dark panel.
+  if (lastPaintedTitle !== raw || !playing || root.dataset.musicBg !== 'album') {
+    clearTrackColors();
+    lastPaintedTitle = raw;
+    if (playing && root.dataset.musicBg === 'album') applyFallbackColors();
+  }
   musicTitle.textContent = playing && song ? song : 'Tidak ada lagu';
   musicSub.textContent = playing ? (artist || 'Pemutar media') : 'Putar musik di pemutar mana pun';
   musicArt.classList.remove('g0', 'g1', 'g2', 'g3', 'g4', 'g5');

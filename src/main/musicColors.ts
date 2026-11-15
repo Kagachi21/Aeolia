@@ -9,6 +9,7 @@ import { trackParts } from './lyrics';
 
 export type TrackColors = { c1: string; c2: string; c3: string };
 export type Palette = TrackColors | null;
+export type Hsl = { h: number; s: number; l: number };
 
 /** 8 s ceiling for the whole lookup, artwork download included. */
 const TIMEOUT_MS = 8000;
@@ -53,6 +54,82 @@ const hex2 = (v: number): string => Math.round(Math.min(255, Math.max(0, v)))
   .toString(16).padStart(2, '0');
 
 const toHex = (r: number, g: number, b: number): string => `#${hex2(r)}${hex2(g)}${hex2(b)}`;
+
+const parseHex = (value: string): { r: number; g: number; b: number } | null => {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(value || '').trim());
+  if (!m) return null;
+  const n = parseInt(m[1], 16);
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+};
+
+/** Pure HSL conversions, exported so the deep-palette rule can be tested
+    without an artwork download. h is degrees 0..360, s and l are 0..1. */
+export function rgbToHsl(r: number, g: number, b: number): Hsl {
+  const rn = r / 255; const gn = g / 255; const bn = b / 255;
+  const max = Math.max(rn, gn, bn); const min = Math.min(rn, gn, bn);
+  const d = max - min;
+  const l = (max + min) / 2;
+  let h = 0;
+  if (d > 0) {
+    if (max === rn) h = ((gn - bn) / d) % 6;
+    else if (max === gn) h = (bn - rn) / d + 2;
+    else h = (rn - gn) / d + 4;
+    h *= 60;
+    if (h < 0) h += 360;
+  }
+  const s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
+  return { h, s, l };
+}
+
+export function hslToRgb(h: number, s: number, l: number): { r: number; g: number; b: number } {
+  const hh = ((h % 360) + 360) % 360 / 360;
+  if (s === 0) { const v = Math.round(l * 255); return { r: v, g: v, b: v }; }
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  const channel = (t: number): number => {
+    let x = t;
+    if (x < 0) x += 1;
+    if (x > 1) x -= 1;
+    if (x < 1 / 6) return p + (q - p) * 6 * x;
+    if (x < 1 / 2) return q;
+    if (x < 2 / 3) return p + (q - p) * (2 / 3 - x) * 6;
+    return p;
+  };
+  return {
+    r: Math.round(channel(hh + 1 / 3) * 255),
+    g: Math.round(channel(hh) * 255),
+    b: Math.round(channel(hh - 1 / 3) * 255),
+  };
+}
+
+export function hslToHex(h: number, s: number, l: number): string {
+  const { r, g, b } = hslToRgb(h, s, l);
+  return toHex(r, g, b);
+}
+
+/** A raw cover palette is often near grey (dark photos, monochrome art) or
+    near white. Painted as-is it makes the card look like an ordinary dark
+    panel. Keep each hue, force a visible saturation and a low lightness: the
+    result is dark ENOUGH for AA text but coloured ENOUGH to read as the album.
+    A fully achromatic palette has no hue to preserve, so it gets the three
+    reference hues (orange, magenta, violet) instead of three identical reds. */
+export function toDeepPalette(colors: Palette): Palette {
+  if (!colors) return null;
+  const entries = [colors.c1, colors.c2, colors.c3].map(parseHex);
+  if (entries.some((e) => e === null)) return null;
+  const hsl = entries.map((e) => rgbToHsl(e!.r, e!.g, e!.b));
+  const achromatic = hsl.every((c) => c.s < 0.08);
+  const referenceHues = [18, 305, 255];
+  const deep = hsl.map((c, i) => {
+    const hue = achromatic ? referenceHues[i] : c.h;
+    /* 0.55 is the floor the spec asks for; 0.70 leaves enough colour after the
+       card gradients mix it into the dark base (measured chroma >= 55). */
+    const sat = Math.min(1, Math.max(0.70, c.s));
+    const light = Math.min(0.32, Math.max(0.22, c.l));
+    return hslToHex(hue, sat, light);
+  });
+  return { c1: deep[0], c2: deep[1], c3: deep[2] };
+}
 
 /** Three dominant, mutually distinct colours from a raw BGRA bitmap.
     Exported as a pure helper so the regression suite can feed it a synthetic

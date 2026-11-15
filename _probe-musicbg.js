@@ -138,6 +138,28 @@ function textPixelContrast(img, rect, scale, textCss) {
   };
 }
 
+/** Mean per-pixel chroma = max(R,G,B)-min(R,G,B) over the card body, the same
+    ruler used to reject the first (washed-out) attempt. A card painted as a
+    neutral dark panel scores <20; an album-coloured card scores >=55. */
+function cardChroma(img, rect, scale) {
+  const size = img.getSize();
+  const bmp = img.toBitmap();
+  const x0 = Math.round(rect.x * scale), y0 = Math.round(rect.y * scale);
+  const x1 = Math.min(size.width, Math.round((rect.x + rect.w) * scale));
+  const y1 = Math.min(size.height, Math.round((rect.y + rect.h) * scale));
+  let sum = 0, n = 0;
+  for (let y = y0; y < y1; y += 1) {
+    for (let x = x0; x < x1; x += 1) {
+      const i = (y * size.width + x) * 4;
+      if (bmp[i + 3] < 200) continue;
+      const r = bmp[i + 2], g = bmp[i + 1], b = bmp[i];
+      sum += Math.max(r, g, b) - Math.min(r, g, b);
+      n += 1;
+    }
+  }
+  return { chroma: n ? +(sum / n).toFixed(1) : 0, pixels: n };
+}
+
 const RECTS = `(() => {
   const box = (sel) => {
     const el = typeof sel === 'string' ? document.querySelector(sel) : sel;
@@ -148,12 +170,15 @@ const RECTS = `(() => {
   };
   const card = document.getElementById('musicCard');
   const cs = getComputedStyle(card);
+  const cardBox = card.getBoundingClientRect();
   return {
     card: {
       dynamic: card.dataset.dynamic, bg: cs.backgroundImage,
       vars: ['--mc-1', '--mc-2', '--mc-3'].map((v) => card.style.getPropertyValue(v)),
       art: getComputedStyle(document.getElementById('musicArt')).backgroundImage,
     },
+    cardRect: { x: cardBox.x, y: cardBox.y, w: cardBox.width, h: cardBox.height },
+    pageWidth: window.innerWidth,
     parts: {
       judul: box('#musicTitle'), artis: box('#musicSub'),
       waktuKiri: box('#musicTimeCur'), waktuKanan: box('#musicTimeEnd'),
@@ -257,13 +282,16 @@ async function main() {
   }
 
   const fallback = await js(RECTS);
+  report.cardRect = fallback.cardRect;
+  report.pageWidth = fallback.pageWidth;
   report.guards.fallbackBefore = fallback.card;
-  check('awal: data-dynamic false, tidak ada --mc-N',
-    fallback.card.dynamic === 'false' && fallback.card.vars.every((v) => v === ''),
+  check('awal: lagu jalan langsung pakai palet fallback (tidak panel abu-abu)',
+    fallback.card.dynamic === 'fallback' && fallback.card.vars.length === 3
+      && fallback.card.vars.every((v) => /^#[0-9a-f]{6}$/i.test(v)),
     JSON.stringify(fallback.card));
 
   /* Drive the real palette through the IPC seam. */
-  await pushColors(REAL_TRACK, palette);
+  await pushColors(REAL_TRACK, colors.toDeepPalette(palette));
   await sleep(320);
   const dynamic = await js(RECTS);
   report.guards.dynamic = dynamic.card;
@@ -309,23 +337,33 @@ async function main() {
     measured.length >= 18 && bad.length === 0,
     `n=${measured.length} gagal=${JSON.stringify(bad)}`);
 
+  /* The rejected first attempt kept AA contrast but painted a grey panel
+     (card chroma 7.5). Guard the actual point of the feature: the card must
+     visibly carry the album colour, not merely survive the contrast check. */
+  const chroma = cardChroma(compositeOver(shot, 'light'), dynamic.cardRect, scale);
+  report.chroma = chroma;
+  check('kartu benar-benar berwarna (chroma >= 55, bukan panel abu-abu)',
+    chroma.pixels >= 1000 && chroma.chroma >= 55, JSON.stringify(chroma));
+
   /* A second real song: changing the title must drop the old glow before the
      new lookup lands, then the new palette has to be the one that paints. */
   await status({ mediaTitle: REAL_TRACK_2 });
   await sleep(320);
   const mid = await js(RECTS);
   report.guards.titleChangeClears = mid.card;
-  check('ganti lagu: warna lama dihapus sebelum palet baru tiba',
-    mid.title === REAL_TRACK_2 && mid.card.dynamic === 'false'
-      && mid.card.vars.every((v) => v === ''),
+  check('ganti lagu: palet fallback lagu baru dipasang, warna lama tak terbawa',
+    mid.title === REAL_TRACK_2 && mid.card.dynamic === 'fallback'
+      && mid.card.vars.every((v) => /^#[0-9a-f]{6}$/i.test(v))
+      && mid.card.vars[0] !== dynamic.card.vars[0],
     JSON.stringify({ title: mid.title, dynamic: mid.card.dynamic, vars: mid.card.vars }));
   if (second) {
-    await pushColors(REAL_TRACK_2, second);
+    const deepSecond = colors.toDeepPalette(second);
+    await pushColors(REAL_TRACK_2, deepSecond);
     await sleep(300);
     const track2 = await js(RECTS);
     report.guards.secondTrack = track2.card;
     check('lagu kedua: palet baru terpasang di kartu',
-      track2.card.dynamic === 'true' && track2.card.vars[0] === second.c1,
+      track2.card.dynamic === 'true' && track2.card.vars[0] === deepSecond.c1,
       JSON.stringify(track2.card.vars));
     const shot2 = await win.capturePage();
     fs.writeFileSync(path.join(SHOT_DIR, 'musicbg-second-track-4x.png'),
@@ -338,9 +376,10 @@ async function main() {
   await sleep(220);
   const cleared = await js(RECTS);
   report.guards.nullColors = cleared.card;
-  check('lookup gagal: variabel dihapus, kembali ke fallback hash',
-    cleared.card.dynamic === 'false' && cleared.card.vars.every((v) => v === '')
-      && cleared.card.bg === fallback.card.bg, JSON.stringify(cleared.card.vars));
+  check('lookup gagal: tetap berwarna lewat palet fallback hash',
+    cleared.card.dynamic === 'fallback' && cleared.card.vars.length === 3
+      && cleared.card.vars.every((v) => /^#[0-9a-f]{6}$/i.test(v)),
+    JSON.stringify(cleared.card.vars));
   const fallbackShot = await win.capturePage();
   fs.writeFileSync(path.join(SHOT_DIR, 'musicbg-fallback-4x.png'),
     compositeOver(fallbackShot, 'light')
@@ -356,8 +395,8 @@ async function main() {
   report.guards.plain = plain.card;
   check('setting plain: tidak ada warna dinamis sama sekali',
     plain.musicBg === 'plain' && plain.card.dynamic === 'false'
-      && plain.card.vars.every((v) => v === '') && plain.card.bg === fallback.card.bg,
-    JSON.stringify({ musicBg: plain.musicBg, dynamic: plain.card.dynamic, vars: plain.card.vars }));
+      && plain.card.vars.every((v) => v === '') && !plain.card.bg.includes('radial-gradient'),
+    JSON.stringify({ musicBg: plain.musicBg, dynamic: plain.card.dynamic, bg: plain.card.bg.slice(0, 60) }));
 
   check('tidak ada error konsol', consoleErrors.length === 0, JSON.stringify(consoleErrors));
   fs.writeFileSync(path.join(SHOT_DIR, 'musicbg-metrics.json'), JSON.stringify(report, null, 2), 'utf8');

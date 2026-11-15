@@ -637,6 +637,31 @@ Module._load = function (request, parent, isMain) {
     offline1 === null && offline2 === null && mc.colorCacheSize() === sizeAfter && sizeAfter === 1,
     JSON.stringify({ offline1, sizeAfter, now: mc.colorCacheSize() }));
 
+  /* --- palet gelap untuk latar kartu dinamis --- */
+  const hslRound = mc.rgbToHsl(255, 0, 0);
+  check('musicColors: rgbToHsl merah -> hue 0',
+    Math.abs(hslRound.h) < 0.01 && Math.abs(hslRound.s - 1) < 0.01 && Math.abs(hslRound.l - 0.5) < 0.01,
+    JSON.stringify(hslRound));
+  check('musicColors: hslToHex round-trip merah',
+    mc.hslToHex(0, 1, 0.5) === '#ff0000', mc.hslToHex(0, 1, 0.5));
+  check('musicColors: toDeepPalette null -> null',
+    mc.toDeepPalette(null) === null);
+  const deepReal = mc.toDeepPalette({ c1: '#231a14', c2: '#a49c91', c3: '#847c73' });
+  const chromaOf = (hex) => {
+    const n = parseInt(hex.slice(1), 16);
+    const c = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    return Math.max(...c) - Math.min(...c);
+  };
+  check('musicColors: toDeepPalette gelap & terwarnai (bukan panel abu-abu)',
+    Boolean(deepReal) && ['c1', 'c2', 'c3'].every((k) => {
+      const h = mc.rgbToHsl(...[1, 3, 5].map((i) => parseInt(deepReal[k].slice(i, i + 2), 16)));
+      return /^#[0-9a-f]{6}$/i.test(deepReal[k]) && chromaOf(deepReal[k]) >= 55 && h.l >= 0.2 && h.l <= 0.34;
+    }), JSON.stringify(deepReal));
+  const deepGray = mc.toDeepPalette({ c1: '#808080', c2: '#7a7a7a', c3: '#909090' });
+  check('musicColors: palet achromatic dapat 3 hue acuan, tidak identik',
+    Boolean(deepGray) && new Set([deepGray.c1, deepGray.c2, deepGray.c3]).size === 3
+      && ['c1', 'c2', 'c3'].every((k) => chromaOf(deepGray[k]) >= 55), JSON.stringify(deepGray));
+
   const failed = results.filter((r) => !r.ok);
   console.log(`\nQA_FEATURES ${results.length - failed.length}/${results.length} PASS`);
   if (failed.length) { console.log('FAILED:', failed.map((f) => f.name)); process.exitCode = 1; }
