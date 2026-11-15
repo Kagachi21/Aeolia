@@ -1080,22 +1080,29 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 /* The id selector used to carry display:flex, which beat the UA
    [hidden] { display: none } rule and kept the layer alive when idle. The
    display now only exists for the visible case. */
+/* The layer is clipped to the reserved strip, not the whole window. The strip
+   is the part #island gives back with --mic-extra, so the capsules start right
+   beside the body instead of being pushed to the far window edge. */
 #micPill:not([hidden]) {
   display: flex;
   align-items: center;
   gap: 8px;
   height: 100%;
-  padding: 0 10px;
-  /* The capsules hug the window edge that is NOT the island body, so the row
-     lands in the reserved strip instead of over the body. */
-  justify-content: flex-end;
+  /* Center/left: strip tumbuh ke KANAN badan island, jadi kapsul harus di
+     sisi KIRI strip, langsung bersebelahan dengan badan. */
+  left: calc(100% - var(--mic-extra, 172px));
+  right: 0;
+  justify-content: flex-start;
+  padding: 0 0 0 8px;
 }
-/* Right-hand islands flip the window: the island body stays flush with the
-   screen edge and the capsules take the strip on its left, so the row order
-   mirrors too. */
+/* Right-hand islands flip the window: the strip is on the LEFT of the body,
+   so the row is aligned against the body side of the strip. */
 #island[data-pos="right"] + #micPill:not([hidden]),
 #island[data-pos="right-side"] + #micPill:not([hidden]) {
-  justify-content: flex-start;
+  left: 0;
+  right: calc(100% - var(--mic-extra, 172px));
+  justify-content: flex-end;
+  padding: 0 8px 0 0;
 }
 /* While the capsules are out the island body gives the strip up, so no dark
    or frosted rectangle is drawn behind them. --mic-extra is written by the
@@ -1161,6 +1168,11 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 #island[data-mic="joining"] + #micPill .meeting-mic .mic-label { display: none; }
 #island[data-mic="joining"] + #micPill .meeting-mic { width: 58px; padding: 0 12px; }
 #island[data-mic="joining"] + #micPill .meeting-cam { opacity: 0; pointer-events: none; }
+/* On a right-hand island the row is aligned to the body side, so the invisible
+   cam would sit between the visible mic and the body and push it 84 px away.
+   Remove only its flex slot while joining; the pop animation stays untouched. */
+#island[data-pos="right"][data-mic="joining"] + #micPill .meeting-cam,
+#island[data-pos="right-side"][data-mic="joining"] + #micPill .meeting-cam { display: none; }
 #island[data-mic="joining"] + #micPill .meeting-mic .mic-dot { background: #ff9f0a; animation: mic-pulse 1s ease-in-out infinite; }
 #micPill:not([hidden]) { animation: mic-pop 320ms cubic-bezier(0.34, 1.56, 0.64, 1); }
 #island[data-pos="right"] + #micPill:not([hidden]),

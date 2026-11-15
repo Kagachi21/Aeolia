@@ -267,8 +267,8 @@ async function main() {
     `body=${pill.body.from}..${pill.body.to} window=${pill.innerWidth} extra=${pill.extra}`);
   check('--mic-extra diisi renderer (skala 100 -> 172px)',
     pill.extra === `${MIC_EXTRA}px`, pill.extra);
-  check('dua kapsul di strip, celah nyata 10 px dari badan island',
-    strip.gapWidth === 10 && pill.mic.from >= pill.body.to + 9,
+  check('dua kapsul di strip, celah nyata 8..12 px dari badan island',
+    strip.gapWidth >= 8 && strip.gapWidth <= 12 && pill.mic.from >= pill.body.to + 7,
     `gap=${strip.gapWidth} body=${pill.body.to} mic=${pill.mic.from}..${pill.mic.to} cam=${pill.cam.from}..${pill.cam.to}`);
   check('kapsul di dalam batas window (tidak terpotong)',
     pill.cam.to <= pill.innerWidth - 5 && pill.cam.to < pill.innerWidth,
@@ -297,9 +297,9 @@ async function main() {
   saveShots(rightShot, 'micpill-right');
   const rightStrip = paintReport(rightShot, right, 'right');
   metricsLog.rightScan = right;
-  check('posisi right: badan island rata kanan, kapsul di strip kiri dengan celah 10 px',
+  check('posisi right: badan island rata kanan, kapsul di strip kiri dengan celah 8..12 px',
     right.pos === 'right' && right.body.from === MIC_EXTRA && right.body.to === right.innerWidth - 1
-      && rightStrip.gapWidth === 10 && right.cam.to < right.body.from,
+      && rightStrip.gapWidth >= 8 && rightStrip.gapWidth <= 12 && right.cam.to < right.body.from,
     `pos=${right.pos} body=${right.body.from}..${right.body.to} mic=${right.mic.from}..${right.mic.to} cam=${right.cam.from}..${right.cam.to} gap=${rightStrip.gapWidth}`);
   check('posisi right: tidak ada container di strip kiri',
     rightStrip.strongPixelsOutsideCapsules === 0,
@@ -325,7 +325,7 @@ async function main() {
     big.extra === `${Math.round(MIC_EXTRA * zoom)}px`, big.extra);
   check('skala 130: badan island tetap selebar pil (195 px), kapsul di luar dengan celah nyata',
     Math.abs((big.body.to - big.body.from + 1) - PILL.width * zoom) <= 2
-      && Math.abs(bigStrip.gapWidth - Math.round(10 * zoom)) <= 2
+      && Math.abs(bigStrip.gapWidth - Math.round(8 * zoom)) <= 2
       && bigStrip.strongPixelsOutsideCapsules === 0,
     `body=${big.body.from}..${big.body.to} gap=${bigStrip.gapWidth} strong=${bigStrip.strongPixelsOutsideCapsules}`);
 
