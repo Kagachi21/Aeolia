@@ -240,8 +240,10 @@ let lastNoticeId = '';
 let lastMeetingSeen = false;
 let callAnimTimer: number | null = null;
 
-/* Banner-friendly states: pill, or the mini notch (expanded by main). */
-const bannerOk = (): boolean => root.dataset.state === 'pill' || root.dataset.state === 'mini';
+/* Banner-friendly states: pill and open only. The mini notch shows the clock
+   and nothing else — a banner arriving there waits in the queue until the
+   island peeks to pill (hover/click), so the notch is never overwritten. */
+const bannerOk = (): boolean => root.dataset.state === 'pill' || root.dataset.state === 'open';
 
 function hideBanner(): void {
   bannerLayer.hidden = true;
@@ -251,12 +253,16 @@ function hideBanner(): void {
 
 function showNextBanner(): void {
   if (bannerTimer !== null) { clearTimeout(bannerTimer); bannerTimer = null; }
-  const item = bannerQueue.shift();
-  if (!item || !bannerOk()) {
-    if (!item) hideBanner();
-    else bannerGapTimer = window.setTimeout(() => { bannerGapTimer = null; showNextBanner(); }, 400);
+  /* State check BEFORE shift: an item taken while mini/open-unfriendly is
+     gone forever. Leave it queued and retry until the state welcomes it. */
+  if (!bannerOk()) {
+    if (bannerQueue.length > 0) {
+      bannerGapTimer = window.setTimeout(() => { bannerGapTimer = null; showNextBanner(); }, 400);
+    } else hideBanner();
     return;
   }
+  const item = bannerQueue.shift();
+  if (!item) { hideBanner(); return; }
   bnAvatar.textContent = initial(item.app);
   bnAvatar.style.background = `hsl(${hueFor(item.app)} 42% 30%)`;
   bnAvatar.style.color = `hsl(${hueFor(item.app)} 90% 82%)`;
@@ -327,7 +333,7 @@ function renderStatus(status: IslandStatus): void {
   root.dataset.meeting = String(Boolean(status.meeting));
   root.dataset.meetingMic = String(Boolean(status.meetingMicButton));
   const meetingNow = Boolean(status.meeting);
-  if (meetingNow && !lastMeetingSeen && bannerOk()) {
+  if (meetingNow && !lastMeetingSeen) {
     const app = (status as IslandStatus).meetingApp || 'rapat';
     enqueueBanner({ app, title: 'Meeting mode', body: `${app} · notifikasi tetap masuk`, tone: 'meeting' });
     root.dataset.callAnim = 'true';
@@ -928,7 +934,9 @@ function renderCard(state: CardState): void {
   if (top && top.id && top.id !== lastNoticeId) {
     const firstSnapshot = lastNoticeId === '';
     lastNoticeId = top.id;
-    if (!firstSnapshot && bannerOk()) {
+    if (!firstSnapshot) {
+      /* Queue regardless of state: the banner queue holds the item until the
+         island is in a banner-friendly state, so nothing is lost in mini. */
       enqueueBanner({ app: top.app, title: top.title || top.app, body: top.body, tone: 'notice' });
     }
   }

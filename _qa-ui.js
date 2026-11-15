@@ -348,7 +348,7 @@ async function rendererProbe() {
     bannerNotice.tone === 'notice' && bannerNotice.title === 'Bila' && bannerNotice.body === 'duren',
     JSON.stringify(bannerNotice));
 
-  /* ---- banner juga hidup saat notch mini: island terbangun dari mini ---- */
+  /* ---- banner TIDAK menimpa notch mini: antrean menunggu state pill ---- */
   await js(win, `window.probe.emit('status', { state: 'mini', miniMode: 'clock' }); true`);
   await sleep(4600);                       // drain the bn1 notice banner first
   await js(win, `window.probe.emit('card', { notices: [{ id: 'bn2', app: 'Telegram', title: 'Obet', body: 'pesan saat notch', at: ${Date.now()} }] }); true`);
@@ -356,11 +356,21 @@ async function rendererProbe() {
   const bannerMini = await js(win, `(() => { const r = document.getElementById('island');
     const b = document.getElementById('banner');
     return { state: r.dataset.state, banner: r.dataset.banner, hidden: b.hidden,
-      tone: r.dataset.bannerTone, body: b.querySelector('.bn-body').textContent }; })()`);
-  check('notifikasi saat notch mini: banner tetap tampil (island terbangun)',
-    bannerMini.state === 'mini' && bannerMini.banner === 'true' && bannerMini.hidden === false
-      && bannerMini.tone === 'notice' && bannerMini.body === 'pesan saat notch',
+      clock: getComputedStyle(document.querySelector('.mini-clock')).display }; })()`);
+  check('notifikasi saat notch mini: banner TIDAK menimpa mini (jam tetap)',
+    bannerMini.state === 'mini' && bannerMini.banner !== 'true' && bannerMini.hidden === true
+      && bannerMini.clock !== 'none',
     JSON.stringify(bannerMini));
+  await js(win, `window.probe.emit('status', { state: 'pill' }); true`);
+  await sleep(900);
+  const bannerAfterPeek = await js(win, `(() => { const r = document.getElementById('island');
+    const b = document.getElementById('banner');
+    return { state: r.dataset.state, banner: r.dataset.banner, hidden: b.hidden,
+      body: b.querySelector('.bn-body').textContent }; })()`);
+  check('antrean banner tidak hilang: tampil begitu island peek/pill',
+    bannerAfterPeek.state === 'pill' && bannerAfterPeek.banner === 'true'
+      && bannerAfterPeek.hidden === false && bannerAfterPeek.body === 'pesan saat notch',
+    JSON.stringify(bannerAfterPeek));
 
   await js(win, `window.probe.emit('card', { notices: [] }); true`);
   await js(win, `window.probe.emit('status', { state: 'pill', meeting: false }); true`);
