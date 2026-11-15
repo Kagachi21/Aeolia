@@ -204,7 +204,7 @@ input:disabled {
 #island[data-surface="Liquid glass"] .stat i,
 #island[data-surface="Liquid glass"] .hint,
 #island[data-surface="Liquid glass"] .empty,
-#island[data-surface="Liquid glass"] .cal-agenda span { color: #d3d8e4; }
+#island[data-surface="Liquid glass"] .cal-agenda span { color: #dde2ec; }
 /* The active lyric line keeps the user accent, but #6ea8ff only reaches 4.43:1
    once the sheen is painted under the glyph. Mixed 20% toward white: same hue,
    enough luminance to clear AA. */

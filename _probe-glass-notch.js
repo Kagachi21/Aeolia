@@ -341,6 +341,30 @@ const COLOURS = `(() => {
   };
 })()`;
 
+/** Box + colour of every rule the Liquid glass secondary ink override touches.
+    Elements in a hidden panel have a zero box, so the caller opens the tab. */
+const INK = `(() => {
+  const q = (sel) => document.querySelector(sel);
+  const box = (el) => {
+    if (!el) return null;
+    const b = el.getBoundingClientRect();
+    if (b.width < 1 || b.height < 1) return null;
+    return { x: b.x, y: b.y, w: b.width, h: b.height };
+  };
+  const one = (el) => (el ? { css: getComputedStyle(el).color, rect: box(el) } : null);
+  return {
+    title: one(document.getElementById('musicTitle')),
+    artist: one(document.getElementById('musicSub')),
+    timeCur: one(document.getElementById('musicTimeCur')),
+    timeEnd: one(document.getElementById('musicTimeEnd')),
+    hint: one(document.getElementById('lyricRate')),
+    noticeHint: one(document.getElementById('noticeHint')),
+    rowHead: one(q('.panel.active .row-head')),
+    stat: one(q('.panel.active .stat i')),
+    calAgenda: one(q('.panel.active .cal-agenda span')),
+  };
+})()`;
+
 function settingsFor(state, pos = 'center', scale = 100) {
   return {
     islandScale: scale, monitor: 'main', islandPosition: pos, edgeMargin: 4,
@@ -556,6 +580,69 @@ async function main() {
     minLyric >= 5,
     `min=${minLyric} (p95 terburuk ${minLyricWorst}) dari ${lyricPx.length} kombinasi; `
     + lyricPx.map((x) => `${x.lk}/${x.k}=${x.v.ratioCss}/${x.v.ratioWorst}`).join(' '));
+
+  /* -------------------------------------------------- A2. secondary ink audit
+     Every rule in the Liquid glass override, measured on the painted pixels of
+     the user profile (level 20, light desktop). Each panel is opened for real:
+     a hidden panel has no box, so measuring it would silently skip the rule. */
+  const ALL_TABS = ['web', 'notifications', 'shelf', 'clipboard', 'music', 'today', 'sholat',
+    'timer', 'reminders', 'water', 'capture', 'controls', 'deck', 'calls'];
+  report.ink = {};
+  await js(`window.probe.emit('settings', ${JSON.stringify({
+    surface: 'Liquid glass', glassLevel: USER.glassLevel, accent: USER.accent, cardWidth: CARD.width,
+    visibleTabs: ALL_TABS, miniMode: 'clock', islandStyle: 'dynamic', islandContent: 'clock-robot',
+    islandPosition: 'center', monitor: 'main', edgeMargin: 4, islandScale: 100, lyricsText: LRC,
+  })}); true`);
+  await sleep(200);
+  const INK_TABS = [
+    { tab: 'music', keys: ['title', 'artist', 'timeCur', 'timeEnd', 'hint'] },
+    { tab: 'notifications', keys: ['noticeHint', 'rowHead'] },
+    { tab: 'controls', keys: ['stat'] },
+    { tab: 'today', keys: ['calAgenda'] },
+  ];
+  for (const spec of INK_TABS) {
+    await status({
+      ...base, state: 'open', surface: 'Liquid glass', glassLevel: USER.glassLevel,
+      media: true, mediaTitle: TRACK, visibleTabs: ALL_TABS,
+    });
+    await sleep(200);
+    await js(`document.querySelector('.tab[data-tab="${spec.tab}"]').click(); true`);
+    await sleep(280);
+    const wanted = await js(`(() => {
+      const c = window.probe.calls().filter((x) => x.kind === 'setCardHeight');
+      return c.length ? c[c.length - 1].payload : null;
+    })()`);
+    if (typeof wanted === 'number' && wanted > 40) {
+      win.setBounds(boundsFor('open', settingsFor('open'), Math.round(wanted)));
+      await sleep(320);
+    }
+    const shot = await win.capturePage();
+    const over = compositeOver(shot, 'light');
+    const scale = shot.getSize().width / (await js('window.innerWidth'));
+    const ink = await js(INK);
+    if (spec.tab === 'music') {
+      fs.writeFileSync(path.join(SHOT_DIR, 'glass-ink-music-light-4x.png'),
+        over.resize({ width: over.getSize().width * 4, quality: 'best' }).toPNG());
+    }
+    for (const key of spec.keys) {
+      const item = ink[key];
+      if (!item || !item.rect) {
+        report.ink[key] = null;
+        console.log(`  ink ${key.padEnd(11)} TIDAK TERUKUR (tidak ada kotak)`);
+        continue;
+      }
+      const m = textPixelContrast(over, item.rect, scale, item.css);
+      report.ink[key] = { tab: spec.tab, css: item.css, ...m };
+      console.log(`  ink ${key.padEnd(11)} ${String(item.css).padEnd(26)}`
+        + ` median=${m.ratioCss} worst=${m.ratioWorst}`);
+    }
+  }
+
+  const inkRows = Object.entries(report.ink).filter(([, v]) => v && v.ratioWorst !== null);
+  const inkFails = inkRows.filter(([, v]) => v.ratioWorst < 4.6);
+  check('Teks sekunder glass (open|light): setiap elemen >= 4.6:1 di piksel terburuk',
+    inkRows.length >= 8 && inkFails.length === 0,
+    `n=${inkRows.length}; ` + inkRows.map(([k, v]) => `${k}=${v.ratioCss}/${v.ratioWorst}`).join(' '));
 
   /* ------------------------------------------------------------ B. notch */
   report.notch = {};
