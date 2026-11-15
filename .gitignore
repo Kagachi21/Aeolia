@@ -1,0 +1,24 @@
+# Dependencies and build output
+node_modules/
+dist/
+dist-release/
+release/
+msix-staging/
+buildrun_*/
+
+# QA scratch state and screenshots (harnesses _qa-*.js / _probe-*.js ARE committed)
+_qa-state.json
+_probe-state.json
+out.log
+run.log
+
+# Local execution ledgers
+.superpowers/
+
+# Screenshots and debug artifacts
+*.png
+!build/**/*.png
+
+# OS noise
+Thumbs.db
+.DS_Store

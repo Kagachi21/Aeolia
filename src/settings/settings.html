@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'self'; script-src 'self'" />
+    <link rel="stylesheet" href="settings.css" />
+    <title>Aeolia Settings</title>
+  </head>
+  <body>
+    <div class="win">
+      <aside class="side">
+        <div class="brand"><img class="brandlogo" src="assets/robot.svg" alt="" />Aeolia</div>
+        <label class="search-label" for="search">Cari pengaturan</label>
+        <input id="search" class="search" placeholder="Nama halaman" />
+        <nav id="nav" class="nav" aria-label="Halaman pengaturan"></nav>
+        <footer class="side-foot">Aeolia Island 1.2.5</footer>
+      </aside>
+      <main class="main">
+        <header class="head">
+          <div>
+            <div class="eyebrow">Settings</div>
+            <h1 id="title">General</h1>
+          </div>
+          <button id="close" class="x" aria-label="Tutup">&times;</button>
+        </header>
+        <div id="page" class="page"></div>
+      </main>
+    </div>
+    <script src="settings.js"></script>
+  </body>
+</html>

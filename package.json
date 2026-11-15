@@ -1,0 +1,48 @@
+{
+  "name": "aeolia-island",
+  "version": "1.2.5",
+  "private": false,
+  "description": "Aeolia Dynamic Island for Windows — NotchPixel-style control panel with memory, media, and site shortcuts.",
+  "author": "Aeolia",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/copy-static.js",
+    "start": "npm run build && node scripts/start.js",
+    "probe": "npm run build && node dist/main/probe.js",
+    "dist:setup": "npm run build && node scripts/build-win.js setup",
+    "dist:portable": "node scripts/build-win.js portable",
+    "dist:msix": "node scripts/build-win.js msix",
+    "dist:all": "npm run build && node scripts/build-win.js all",
+    "runtime": "electron-builder --win dir"
+  },
+  "dependencies": {
+    "koffi": "^3.3.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.5",
+    "electron": "^45.2.3",
+    "electron-builder": "^25.1.8",
+    "typescript": "^5.6.3"
+  },
+  "build": {
+    "appId": "com.aeolia.island",
+    "productName": "Aeolia Island",
+    "copyright": "Aeolia",
+    "directories": {
+      "output": "dist-release",
+      "buildResources": "build"
+    },
+    "files": [
+      "package.json",
+      "dist/**/*",
+      "build/appicon.ico"
+    ],
+    "asar": false,
+    "win": {
+      "icon": "build/appicon.ico",
+      "target": [
+        "dir"
+      ]
+    }
+  }
+}

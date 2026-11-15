@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'"
+    />
+    <title>Pilih area</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 100%; height: 100%; overflow: hidden; background: rgba(0,0,0,0.34); cursor: crosshair; }
+      #sel { position: absolute; display: none; border: 1px solid #46e0dc; background: rgba(70,224,220,0.13); box-shadow: 0 0 0 1px rgba(0,0,0,0.35); }
+      #hint { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); padding: 6px 12px; border-radius: 8px; background: rgba(20,20,24,0.85); color: #f3ece6; font: 12px/1.3 "Segoe UI", system-ui, sans-serif; white-space: nowrap; }
+    </style>
+  </head>
+  <body>
+    <div id="hint">Seret untuk memilih area · Esc untuk batal</div>
+    <div id="sel"></div>
+    <script>
+      (function () {
+        var sel = document.getElementById('sel');
+        var start = null;
+        document.addEventListener('mousedown', function (e) {
+          start = { x: e.clientX, y: e.clientY };
+          sel.style.display = 'block';
+          sel.style.left = start.x + 'px';
+          sel.style.top = start.y + 'px';
+          sel.style.width = '0px';
+          sel.style.height = '0px';
+        });
+        document.addEventListener('mousemove', function (e) {
+          if (!start) return;
+          var x = Math.min(start.x, e.clientX);
+          var y = Math.min(start.y, e.clientY);
+          sel.style.left = x + 'px';
+          sel.style.top = y + 'px';
+          sel.style.width = Math.abs(e.clientX - start.x) + 'px';
+          sel.style.height = Math.abs(e.clientY - start.y) + 'px';
+        });
+        document.addEventListener('mouseup', function (e) {
+          if (!start) return;
+          var rect = {
+            x: Math.min(start.x, e.clientX),
+            y: Math.min(start.y, e.clientY),
+            width: Math.abs(e.clientX - start.x),
+            height: Math.abs(e.clientY - start.y),
+          };
+          start = null;
+          window.captureOverlay.submit(rect.width >= 4 && rect.height >= 4 ? rect : null);
+        });
+        document.addEventListener('keydown', function (e) {
+          if (e.key === 'Escape') window.captureOverlay.submit(null);
+        });
+      })();
+    </script>
+  </body>
+</html>

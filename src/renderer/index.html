@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; img-src 'self' file:; style-src 'self'; script-src 'self'; media-src 'self' file: blob: mediastream:"
+    />
+    <link rel="stylesheet" href="styles.css" />
+    <title>Aeolia Island</title>
+  </head>
+  <body>
+    <!-- Artwork adapted from reyland_robot_kucing.svg: cat ears, capsule eyes,
+         pink nose and whiskers. Inline so the strokes can follow --accent. -->
+    <template id="catTemplate">
+      <svg class="cat" viewBox="0 0 40 34" aria-hidden="true" focusable="false">
+        <path class="cat-ear" d="M7 13 L9 3 L17 9 Z" />
+        <path class="cat-ear" d="M33 13 L31 3 L23 9 Z" />
+        <path class="cat-ear-in" d="M9.4 11.6 L10.6 6 L15.2 9.8 Z" />
+        <path class="cat-ear-in" d="M30.6 11.6 L29.4 6 L24.8 9.8 Z" />
+        <rect class="cat-head" x="5" y="9" width="30" height="23" rx="9" />
+        <g class="cat-blink">
+          <rect class="cat-eye" x="12.4" y="15" width="4.2" height="9.2" rx="2.1" />
+          <rect class="cat-eye" x="23.4" y="15" width="4.2" height="9.2" rx="2.1" />
+          <rect class="cat-glint" x="13.3" y="16.1" width="1.3" height="3" rx="0.65" />
+          <rect class="cat-glint" x="24.3" y="16.1" width="1.3" height="3" rx="0.65" />
+        </g>
+        <path class="cat-nose" d="M18.4 25 L21.6 25 L20 26.9 Z" />
+        <g class="cat-mouth">
+          <path class="cat-line" d="M20 26.9 V28.1 M20 28.1 Q17.6 30 15.7 28.6 M20 28.1 Q22.4 30 24.3 28.6" />
+        </g>
+        <path class="cat-smile" d="M16.6 27.6 Q20 31.4 23.4 27.6" />
+        <path class="cat-line" d="M1 20 H5 M1 24 H5 M39 20 H35 M39 24 H35" />
+        <g class="cat-headset">
+          <path class="cat-band" d="M7.5 19 V15.4 A12.5 12.5 0 0 1 32.5 15.4 V19" />
+          <rect class="cat-cup" x="3.4" y="17" width="5" height="9" rx="2.5" />
+          <rect class="cat-cup" x="31.6" y="17" width="5" height="9" rx="2.5" />
+        </g>
+        <g class="cat-glasses">
+          <circle class="cat-lens" cx="14.5" cy="19.4" r="4.6" />
+          <circle class="cat-lens" cx="25.5" cy="19.4" r="4.6" />
+          <path class="cat-line" d="M19.1 19.4 H20.9 M10 18.8 L6.4 16.8 M30 18.8 L33.6 16.8" />
+        </g>
+        <g class="cat-hat">
+          <path class="cat-hat-top" d="M12.4 9.4 Q20 0.6 27.6 9.4 Z" />
+          <rect class="cat-hat-brim" x="7" y="8.2" width="26" height="3.4" rx="1.7" />
+        </g>
+        <g class="cat-held">
+          <rect class="cat-held-item" x="27.4" y="24.6" width="7.2" height="7.2" rx="2" />
+        </g>
+      </svg>
+    </template>
+
+    <h1 class="sr-only">Aeolia Island</h1>
+    <div id="island" data-state="pill" data-island-style="dynamic" data-island-content="clock-robot" data-cat-pos="center" data-cat-rail="right" data-greeting="true" data-mini-mode="clock" data-mic="off">
+      <div id="mini" class="layer">
+        <span class="cat-slot" id="miniCatSlot"></span>
+        <span id="miniClock" class="mini-clock"></span>
+        <span id="miniDate" class="mini-date"></span>
+      </div>
+
+      <div id="pill" class="layer">
+        <span class="cat-slot" id="pillCatSlot"></span>
+        <div class="media-box" id="mediaBox">
+          <div class="media-text" id="mediaText" data-scroll="false">
+            <span class="media-track" id="mediaTrack"></span>
+          </div>
+          <div class="media-lyric" id="mediaLyric" hidden></div>
+          <span class="media-viz" id="mediaViz" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+        </div>
+        <span id="clock">--:--</span>
+        <span class="battery" id="battery" aria-label="Baterai">--</span>
+      </div>
+
+      <!-- Notice/meeting banner: overlays the pill while the main process
+           widens the window (banner:show), then auto-hides. -->
+      <div id="banner" class="layer" hidden>
+        <span class="bn-avatar" id="bnAvatar">M</span>
+        <span class="bn-main">
+          <span class="bn-top"><span class="bn-title" id="bnTitle"></span><span class="bn-when">sekarang</span></span>
+          <span class="bn-body" id="bnBody"></span>
+        </span>
+      </div>
+
+      <!-- Separate mic capsule: reserved space comes from the window bounds
+           (MIC_PILL_EXTRA), so it sits beside the island with a real gap. -->
+      <div id="micPill" class="layer" hidden>
+        <button class="meeting-mic" id="meetingMic" type="button" aria-label="Bisukan mikrofon" title="Bisukan mikrofon saat rapat">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+          <span class="mic-label">Mic</span>
+          <span class="mic-dot" aria-hidden="true"></span>
+        </button>
+      </div>
+
+      <div id="open" class="layer">
+        <nav class="tabs" id="tabs" aria-label="Panel tabs">
+          <span class="cat-slot brand-cat" id="brandCatSlot"></span>
+          <button class="tab-arrow" id="tabsPrev" type="button" aria-label="Geser tab ke kiri" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 6 9 12l5.5 6"/></svg>
+          </button>
+          <div class="tabs-scroll" id="tabsScroll">
+            <button class="tab" data-tab="web" aria-label="Web" title="Web. Seret untuk mengurutkan">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14 0 18M12 3c-3 3.5-3 14 0 18"/></svg>
+            </button>
+            <button class="tab" data-tab="notifications" aria-label="Notifikasi" title="Notifikasi. Seret untuk mengurutkan">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9a6 6 0 1 1 12 0c0 4 1.5 5.5 1.5 5.5h-15S6 13 6 9Z"/><path d="M10 19a2 2 0 0 0 4 0"/></svg>
+            </button>
+            <button class="tab" data-tab="shelf" aria-label="Shelf" title="Shelf. Seret untuk mengurutkan">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h6l2 2h10v10H3z"/></svg>
+            </button>
+            <button class="tab" data-tab="clipboard" aria-label="Clipboard" title="Clipboard. Seret untuk mengurutkan">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4h6v3H9z"/></svg>
+            </button>
+            <button class="tab" data-tab="music" aria-label="Music" title="Music. Seret untuk mengurutkan">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="7" cy="17" r="3"/><circle cx="17" cy="15" r="3"/><path d="M10 17V6l10-2v11"/></svg>
+            </button>
+            <button class="tab" data-tab="today" aria-label="Today" title="Today. Seret untuk mengurutkan">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M8 3v4M16 3v4M4 11h16"/></svg>
+            </button>
+            <button class="tab" data-tab="sholat" aria-label="Sholat" title="Sholat. Seret untuk mengurutkan">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v4M12 17a5 5 0 0 0 5-5H7a5 5 0 0 0 5 5ZM12 13V7"/></svg>
+            </button>
+            <button class="tab" data-tab="controls" aria-label="Controls" title="Controls. Seret untuk mengurutkan">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h9M19 8h1M4 16h4M12 16h8"/><circle cx="16" cy="8" r="2"/><circle cx="9" cy="16" r="2"/></svg>
+            </button>
+            <button class="tab" data-tab="timer" aria-label="Timer" title="Timer. Seret untuk mengurutkan">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4M9 2h6"/></svg>
+            </button>
+            <button class="tab" data-tab="reminders" aria-label="Reminders" title="Reminders. Seret untuk mengurutkan">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s4-6 10-6 10 6 10 6-4 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+            <button class="tab" data-tab="water" aria-label="Water" title="Water. Seret untuk mengurutkan">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11Z"/></svg>
+            </button>
+            <button class="tab" data-tab="capture" aria-label="Capture" title="Capture. Seret untuk mengurutkan">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="4"/><path d="M9 6l1.5-2h3L15 6"/></svg>
+            </button>
+            <button class="tab" data-tab="deck" aria-label="Deck" title="Deck. Seret untuk mengurutkan">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="3" width="10" height="18" rx="2"/><path d="M11 18h2"/></svg>
+            </button>
+            <button class="tab" data-tab="calls" aria-label="Calls" title="Calls. Seret untuk mengurutkan">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13v-1a8 8 0 0 1 16 0v1"/><rect x="3" y="13" width="4" height="6" rx="1.5"/><rect x="17" y="13" width="4" height="6" rx="1.5"/></svg>
+            </button>
+          </div>
+          <button class="tab-arrow" id="tabsNext" type="button" aria-label="Geser tab ke kanan" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 6 15 12l-5.5 6"/></svg>
+          </button>
+          <button class="tab tab-grid" data-tab="panels" aria-label="Semua panel" title="Semua panel">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/></svg>
+          </button>
+          <span class="tabs-clock" id="openClock" aria-label="Jam">--:--</span>
+          <button class="tab tab-settings" data-tab="settings" aria-label="Settings" title="Settings">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4"/></svg>
+          </button>
+        </nav>
+
+        <main class="panels">
+          <section class="panel" data-panel="web">
+            <div class="site-grid" id="siteGrid"></div>
+            <form class="site-form" id="siteForm" hidden>
+              <label class="field"><span>Nama</span><input id="siteName" placeholder="YT Music" maxlength="24" /></label>
+              <label class="field"><span>URL</span><input id="siteUrl" placeholder="https://contoh.com" maxlength="300" /></label>
+              <button type="submit">Simpan</button>
+            </form>
+          </section>
+
+          <section class="panel" data-panel="notifications">
+            <div class="svc-bar" id="svcBar" hidden>
+              <span class="svc-dot" id="svcDot"></span>
+              <span id="svcText">Menghubungkan…</span>
+              <button class="chip" id="svcResume" type="button" hidden>Lanjutkan musik</button>
+              <button class="link" id="svcDismiss" type="button" hidden>Abaikan</button>
+            </div>
+            <div class="row-head"><span id="noticeCount">0</span><button id="clearNotices" class="link">Clear all</button></div>
+            <p class="hint" id="noticeHint">Hanya notifikasi dari aplikasi. Teks hasil salin tersimpan di tab Clipboard.</p>
+            <div class="list" id="noticeList"></div>
+          </section>
+
+          <section class="panel" data-panel="shelf">
+            <div class="drop" id="dropZone">Drop files here</div>
+            <div class="list" id="shelfList"></div>
+          </section>
+
+          <section class="panel" data-panel="clipboard">
+            <div class="row-head"><span id="clipCount">0 item</span><span class="spacer"></span><button id="clearClips" class="link">Clear</button></div>
+            <p class="hint" id="clipHint">Teks yang Anda salin masuk ke sini. Salin untuk memakai lagi, Tempel untuk mengetik ke aplikasi lain.</p>
+            <div class="list" id="clipList"></div>
+          </section>
+
+          <section class="panel" data-panel="music">
+            <div class="music-card" id="musicCard" data-bg="album">
+              <div class="music-now">
+                <span class="music-art" id="musicArt" aria-hidden="true">
+                  <svg viewBox="0 0 24 24"><circle cx="7" cy="17" r="3"/><circle cx="17" cy="15" r="3"/><path d="M10 17V6l10-2v11"/></svg>
+                </span>
+                <span class="music-meta">
+                  <strong id="musicTitle">Tidak ada lagu</strong>
+                  <span id="musicSub">Putar musik di pemutar mana pun</span>
+                </span>
+                <span class="media-viz music-viz" id="musicViz" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+              </div>
+              <div class="music-progress" id="musicProgress" data-style="Simple" role="progressbar" aria-label="Kemajuan lirik">
+                <div class="mp-fill" id="musicFill"></div>
+              </div>
+              <div class="music-times"><span id="musicTimeCur">0:00</span><span id="musicTimeEnd">--:--</span></div>
+              <div class="music-transport">
+                <button class="mt-btn" id="musicPrev" type="button" aria-label="Lagu sebelumnya">
+                  <svg viewBox="0 0 24 24"><path d="M6 5v14M18 5l-9 7 9 7z"/></svg>
+                </button>
+                <button class="mt-btn mt-play" id="musicPlay" type="button" aria-label="Putar atau jeda" aria-pressed="false">
+                  <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                </button>
+                <button class="mt-btn" id="musicNext" type="button" aria-label="Lagu berikutnya">
+                  <svg viewBox="0 0 24 24"><path d="M18 5v14M6 5l9 7-9 7z"/></svg>
+                </button>
+                <label class="music-vol"><span class="sr-only">Volume</span>
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/></svg>
+                  <input id="musicVol" type="range" min="0" max="100" value="50" />
+                </label>
+              </div>
+            </div>
+            <div class="panel-head music-lyric-head">
+              <div class="ph-left"><strong>Lyrics</strong><span id="lyricMeta">Belum ada lirik</span></div>
+              <span class="state-badge" id="lyricState">Berhenti</span>
+            </div>
+            <div class="lyric-view" id="lyricView"><div class="lyric-lines" id="lyricLines"></div></div>
+            <div class="rem-actions">
+              <button class="chip" id="lyricPlay" type="button">Mulai</button>
+              <button class="chip" id="lyricReset" type="button">Ulang</button>
+              <span class="hint" id="lyricRate">1,0×</span>
+            </div>
+            <p class="hint">Tempel lirik berformat LRC di Settings &gt; Music. Windows tidak membuka posisi lagu, jadi tekan Mulai bersamaan dengan lagu; kecepatan dan geseran waktu mengatur sinkronnya.</p>
+          </section>
+          <section class="panel" data-panel="today">
+            <div class="panel-head">
+              <div class="ph-left"><strong id="calDate">--</strong><span id="calCity">Jakarta</span></div>
+              <button class="chip" id="calToday" type="button">Today</button>
+            </div>
+            <div class="cal-nav">
+              <button class="iconbtn" id="calPrev" type="button" aria-label="Bulan sebelumnya">&#8249;</button>
+              <strong id="calMonth">--</strong>
+              <button class="iconbtn" id="calNext" type="button" aria-label="Bulan berikutnya">&#8250;</button>
+            </div>
+            <div class="cal-week"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div>
+            <div class="cal-grid" id="calGrid"></div>
+            <div class="cal-agenda"><strong>Hari ini</strong><span id="calHoliday"></span></div>
+            <div class="cal-extras" id="calExtras" hidden>
+              <span class="cal-weather" id="calWeather"></span>
+              <span class="cal-next" id="calNext"></span>
+            </div>
+            <div class="cal-tasks">
+              <div class="row-head"><span>Tasks</span><span id="taskCount">0 tugas</span></div>
+              <div class="list" id="taskList"></div>
+              <form class="site-form mt6" id="taskForm">
+                <label class="field"><span>Tugas</span><input id="taskName" placeholder="Add a task..." maxlength="80" /></label>
+                <button type="submit">Add</button>
+              </form>
+            </div>
+          </section>
+          <section class="panel" data-panel="sholat">
+            <div class="sky" id="praySky">
+              <div class="sky-time"><strong id="prayNextName">Subuh</strong><strong id="prayNextTime">--:--</strong></div>
+              <span class="sky-count" id="prayCountdown">--</span>
+              <svg class="sky-arc" viewBox="0 0 320 84" preserveAspectRatio="none" aria-hidden="true">
+                <path class="arc-base" d="M0 78 H320" />
+                <path class="arc-line" d="M8 76 Q160 -10 312 76" />
+                <path class="arc-dot" d="M8 76 Q160 -10 312 76" />
+              </svg>
+              <span class="sky-moon" id="prayMoon">&#9789;</span>
+            </div>
+            <div class="pray-times" id="prayTimes"></div>
+            <div class="pray-foot">
+              <label class="pray-city" id="prayCityWrap"><span>Lokasi</span>
+                <select id="prayCity" class="select">
+                  <option>Jakarta</option><option>Bandung</option><option>Surabaya</option>
+                  <option>Yogyakarta</option><option>Semarang</option><option>Medan</option>
+                  <option>Makassar</option><option>Denpasar</option><option>Banda Aceh</option>
+                </select>
+              </label>
+              <span id="prayDate">--</span>
+            </div>
+            <p class="hint" id="prayHint">Perkiraan astronomis (Fajr 20&deg;, Isha 18&deg;). Bukan jadwal resmi Kemenag; untuk ibadah gunakan sumber resmi.</p>
+          </section>
+          <section class="panel" data-panel="timer">
+            <div class="chips" id="timerChips">
+              <button class="chip" data-min="1">1 min</button>
+              <button class="chip" data-min="5">5 min</button>
+              <button class="chip" data-min="10">10 min</button>
+              <span class="spacer"></span>
+              <button class="chip" id="timerStop">Stop</button>
+            </div>
+            <p class="empty" id="timerText">Nothing running yet</p>
+          </section>
+          <section class="panel" data-panel="reminders">
+            <div class="panel-head">
+              <div class="ph-left"><strong>Eye break reminder</strong><span id="eyeSub">Istirahatkan mata secara berkala</span></div>
+              <span class="state-badge" id="eyeState">Mati</span>
+            </div>
+            <div class="chips" id="eyeChips">
+              <button class="chip chip-on" id="eyeToggle" type="button">On</button>
+              <button class="chip" data-min="20" type="button">20 min</button>
+              <button class="chip" data-min="30" type="button">30 min</button>
+              <button class="chip" data-min="45" type="button">45 min</button>
+              <button class="chip" data-min="60" type="button">60 min</button>
+            </div>
+            <div class="rem-actions">
+              <button class="alarm-btn" id="eyeAlarm" type="button">Alarm menyala</button>
+              <button class="link" id="eyeTry" type="button">Try now</button>
+            </div>
+            <p class="empty" id="eyeText"></p>
+          </section>
+          <section class="panel" data-panel="water">
+            <div class="panel-head">
+              <div class="ph-left"><strong>Water reminder</strong><span id="waterSub">Minum teratur sepanjang hari</span></div>
+              <span class="state-badge" id="waterState">Mati</span>
+            </div>
+            <div class="water-track"><div class="water-fill" id="waterBar"></div></div>
+            <div class="water-now"><strong id="waterText">0 dari 2L</strong><button class="chip" id="waterAdd" type="button">+140 ml</button></div>
+            <p class="hint" id="waterSchedule"></p>
+            <div class="step-grid">
+              <div class="stepper"><span>Goal</span><button data-w="goal-" type="button">&#8722;</button><b id="wGoal">2L</b><button data-w="goal+" type="button">+</button></div>
+              <div class="stepper"><span>Start</span><button data-w="start-" type="button">&#8722;</button><b id="wStart">08.00</b><button data-w="start+" type="button">+</button></div>
+              <div class="stepper"><span>Until</span><button data-w="end-" type="button">&#8722;</button><b id="wEnd">22.00</b><button data-w="end+" type="button">+</button></div>
+              <div class="stepper"><span>Every</span><button data-w="every-" type="button">&#8722;</button><b id="wEvery">60 mnt</b><button data-w="every+" type="button">+</button></div>
+            </div>
+            <div class="rem-actions">
+              <button class="chip" id="waterTest" type="button">Test</button>
+              <label class="sound-toggle"><input type="checkbox" id="waterSound" /> Bunyi</label>
+              <button class="link" id="waterToggle" type="button">Aktifkan</button>
+            </div>
+          </section>
+          <section class="panel" data-panel="capture">
+            <div class="panel-head">
+              <div class="ph-left"><strong>Capture</strong><span>Tangkapan layar &amp; rekaman</span></div>
+              <span class="kbd" id="capShortcutHint">Ctrl+Shift+S</span>
+            </div>
+            <div class="cap-grid">
+              <button class="cap-tile" data-cap="full" type="button"><span class="cap-ico">&#128421;</span><b>Full screen</b></button>
+              <button class="cap-tile" data-cap="area" type="button"><span class="cap-ico">&#9635;</span><b>Area</b></button>
+              <button class="cap-tile" data-cap="window" type="button"><span class="cap-ico">&#9707;</span><b>Window</b></button>
+              <button class="cap-tile cap-rec" data-cap="record" type="button"><span class="cap-ico">&#9679;</span><b>Record screen</b></button>
+            </div>
+            <div class="rem-actions">
+              <span class="hint" id="capStatus">Hasil disimpan ke Pictures/Aeolia</span>
+              <button class="link" id="capFolder" type="button">Buka folder</button>
+            </div>
+          </section>
+          <section class="panel" data-panel="panels">
+            <div class="panel-grid" id="panelsGrid"></div>
+          </section>
+
+          <section class="panel" data-panel="controls">
+            <label class="slider"><span>Brightness</span><input id="brightnessSlider" type="range" min="0" max="100" value="50" /></label>
+            <label class="slider"><span>Volume</span><input id="volumeSlider" type="range" min="0" max="100" value="50" /></label>
+            <div class="stats" id="statsRow">
+              <span class="stat"><b id="statCpu">-</b><i>CPU</i></span>
+              <span class="stat"><b id="statRam">-</b><i>RAM</i></span>
+              <button class="chip" id="cleanRam">Clear RAM</button>
+            </div>
+            <div class="toggles">
+              <button data-settings="ms-settings:display">Brightness settings</button>
+              <button id="muteBtn">Mute</button>
+              <button data-settings="ms-settings:sound">Volume settings</button>
+              <button data-settings="ms-settings:network-wifi">Wi-Fi</button>
+              <button data-settings="ms-settings:bluetooth">Bluetooth</button>
+              <button data-settings="ms-settings:nightlight">Night light</button>
+            </div>
+            <p class="hint">Brightness lewat DDC/CI monitor. Volume memakai langkah tombol media, jadi posisinya perkiraan.</p>
+          </section>
+
+          <section class="panel" data-panel="deck">
+            <p class="hint">Deck belum dibangun: butuh penghubung ponsel. Tombol di bawah membuka pengaturan perangkat seluler Windows.</p>
+            <button data-settings="ms-settings:mobile-devices">Buka pengaturan perangkat seluler</button>
+          </section>
+
+          <section class="panel" data-panel="calls">
+            <div class="grid2">
+              <button data-settings="ms-settings:sound">Speaker &amp; Microphone</button>
+              <button id="testSpeaker">Test speaker</button>
+            </div>
+            <p class="hint">Daftar perangkat memerlukan COM audio; untuk sekarang tombol membuka pengaturan suara Windows.</p>
+          </section>
+
+        </main>
+      </div>
+    </div>
+    <script src="renderer.js"></script>
+    <script src="panels.js"></script>
+  </body>
+</html>
