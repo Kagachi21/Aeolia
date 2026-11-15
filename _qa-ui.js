@@ -376,6 +376,20 @@ async function rendererProbe() {
   await js(win, `window.probe.emit('status', { state: 'pill', meeting: false }); true`);
   await sleep(4600);
 
+  /* ---- lirik otomatis: event lyrics -> timeline lirik jalan sendiri ---- */
+  await js(win, `window.probe.emit('lyrics', { title: 'Kavi Rao - Neon Harbor', lrc: '[00:01.00] baris satu\\n[00:04.00] baris dua' }); true`);
+  await sleep(150);
+  const autoLyr = await js(win, `(() => { const snap = window.aeoliaLyricNow ? window.aeoliaLyricNow() : null;
+    return { total: snap ? snap.total : -1, running: snap ? snap.running : null,
+      meta: document.getElementById('lyricMeta').textContent }; })()`);
+  check('lirik otomatis: LRC masuk timeline, total>0, auto berjalan',
+    autoLyr.total === 4 && autoLyr.running === true, JSON.stringify(autoLyr));
+  await js(win, `window.probe.emit('lyrics', { title: 'Lagu Lain', lrc: null }); true`);
+  await sleep(120);
+  const autoNone = await js(win, `document.querySelector('.lyric-empty') ? document.querySelector('.lyric-empty').textContent : ''`);
+  check('lirik otomatis tidak ketemu: pesan jujur tampil',
+    autoNone.includes('tidak ditemukan'), String(autoNone));
+
   /* ---- klik notch mini: expand lewat IPC island:open ---- */
   await js(win, `window.probe.emit('status', { state: 'mini', miniMode: 'clock' }); true`);
   await sleep(120);

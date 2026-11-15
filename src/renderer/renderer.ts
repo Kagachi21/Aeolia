@@ -20,6 +20,21 @@ for (const slot of ['miniCatSlot', 'pillCatSlot', 'brandCatSlot']) {
   document.getElementById(slot)?.append(catTemplate.content.cloneNode(true));
 }
 
+/* Auto lyrics: main fetches synced LRC for the playing track and pushes it
+   here. panels.js consumes it via aeoliaAutoLyric; events that land before
+   panels.js has loaded wait in the pending slot. */
+let autoLyricPending: { title: string; lrc: string | null } | null = null;
+(window as unknown as Record<string, unknown>).aeoliaAutoLyricPendingGet = () => {
+  const p = autoLyricPending;
+  autoLyricPending = null;
+  return p;
+};
+window.api.onLyricsAuto((p) => {
+  const w = window as unknown as { aeoliaAutoLyric?: (lrc: string | null, title: string) => void };
+  if (typeof w.aeoliaAutoLyric === 'function') w.aeoliaAutoLyric(p.lrc, p.title);
+  else autoLyricPending = p;
+});
+
 const EYE_PALETTE = ['#46e0dc', '#6ea8ff', '#b48cff', '#ff8fc7', '#e9c46a', '#ff9c6b', '#ffffff'];
 
 const BAR_TOKENS = ['clock', 'cat', 'battery', 'media', 'mic'] as const;

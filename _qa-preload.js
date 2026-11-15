@@ -116,6 +116,7 @@ contextBridge.exposeInMainWorld('api', {
   },
   getExtras: async () => ({ ...extras }),
   onExtras: noopReg('extras'),
+  onLyricsAuto: noopReg('lyrics'),
   dismissResume: () => record('dismissResume', null),
   pauseMedia: () => record('pauseMedia', null),
   playMedia: () => record('playMedia', null),

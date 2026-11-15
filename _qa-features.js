@@ -346,6 +346,41 @@ Module._load = function (request, parent, isMain) {
     extrasMod.matchesCall('WhatsApp — Panggilan video') === true);
   check('browser biasa bukan rapat', extrasMod.matchesCall('Mozilla Firefox - Mozilla Firefox') === false);
 
+  /* --- lirik otomatis (main/lyrics.ts) --- */
+  const lyricsMod = require('./dist/main/lyrics.js');
+  const tp = lyricsMod.trackParts('Kavi Rao - Neon Harbor');
+  check('trackParts: "Artis - Judul" terpecah', tp.artist === 'Kavi Rao' && tp.title === 'Neon Harbor', JSON.stringify(tp));
+  const tp2 = lyricsMod.trackParts('Neon Harbor');
+  check('trackParts: judul saja, artis kosong', tp2.artist === '' && tp2.title === 'Neon Harbor', JSON.stringify(tp2));
+  check('pickSynced: ambil syncedLyrics pertama yang ada',
+    lyricsMod.pickSynced([{ syncedLyrics: null }, { syncedLyrics: '[00:05] hai' }]) === '[00:05] hai',
+    JSON.stringify(lyricsMod.pickSynced([{ syncedLyrics: null }, { syncedLyrics: '[00:05] hai' }])));
+  check('pickSynced: tanpa hasil -> null', lyricsMod.pickSynced([{ plainLyrics: 'x' }]) === null);
+  const lyricFetches = [];
+  let lyricReplies = [];
+  electronMock.net.fetch = async (url) => {
+    lyricFetches.push(String(url));
+    return lyricReplies.length ? lyricReplies.shift() : { ok: false, json: async () => [] };
+  };
+  lyricReplies = [{ ok: true, json: async () => ({ syncedLyrics: '[00:01.00] baris satu\n[00:04.00] baris dua' }) }];
+  const lrc1 = await lyricsMod.fetchLyrics('Kavi Rao - Neon Harbor');
+  check('fetchLyrics: endpoint get berhasil, LRC tersinkron kembali',
+    lrc1 === '[00:01.00] baris satu\n[00:04.00] baris dua' && lyricFetches[0].includes('/get?'), String(lrc1));
+  const lrcCalls = lyricFetches.length;
+  await lyricsMod.fetchLyrics('Kavi Rao - Neon Harbor');
+  check('fetchLyrics: cache mencegah fetch ulang untuk judul sama', lyricFetches.length === lrcCalls,
+    `${lyricFetches.length} vs ${lrcCalls}`);
+  lyricReplies = [
+    { ok: false, json: async () => [] },
+    { ok: true, json: async () => [{ plainLyrics: 'nope' }, { syncedLyrics: '[00:09] fallback' }] },
+  ];
+  const lrc2 = await lyricsMod.fetchLyrics('Penyanyi X - Lagu Baru');
+  check('fetchLyrics: get gagal -> fallback search memilih synced',
+    lrc2 === '[00:09] fallback' && lyricFetches.length === lrcCalls + 2, String(lrc2));
+  lyricReplies = [{ ok: true, json: async () => [] }];
+  const lrc3 = await lyricsMod.fetchLyrics('Tanpa Hasil Apapun');
+  check('fetchLyrics: tidak ketemu -> null jujur', lrc3 === null, String(lrc3));
+
   /* --- main process: notice:open protocol map + media IPC --- */
   const settingsLive = require('./dist/main/settings.js');
   await require('./dist/main/main.js');

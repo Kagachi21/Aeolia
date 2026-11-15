@@ -164,6 +164,7 @@ declare global {
       clipboardPaste(text: string): Promise<{ ok: boolean }>;
       getExtras(): Promise<ExtrasState>;
       onExtras(cb: (s: ExtrasState) => void): () => void;
+      onLyricsAuto(cb: (p: { title: string; lrc: string | null }) => void): () => void;
       dismissResume(): void;
       pauseMedia(): void;
       playMedia(): void;

@@ -647,8 +647,7 @@
     };
   };
 
-  function parseLyrics(raw: string): LyricLine[] {
-    const out: LyricLine[] = [];
+  function parseLyrics(raw: string): LyricLine[] {    const out: LyricLine[] = [];
     const plain: string[] = [];
     const stamp = /\[(\d{1,2}):(\d{2})(?:[.:](\d{1,2}))?\]/g;
     for (const line of String(raw ?? '').split(/\r?\n/)) {
@@ -681,13 +680,17 @@
   }
 
   function rebuildLyrics(): void {
-    lyricLines = parseLyrics(settings?.lyricsText ?? '');
+    // Auto-fetched LRC for the current track wins; the manual paste is the
+    // fallback (and the only source when the fetch found nothing).
+    lyricLines = parseLyrics(autoLrc ?? settings?.lyricsText ?? '');
     const box = $('lyricLines');
     box.replaceChildren();
     if (!lyricLines.length) {
       const p = document.createElement('p');
       p.className = 'lyric-empty';
-      p.textContent = 'Belum ada lirik. Tempel teks LRC di Settings > Music, lalu tekan Mulai bersamaan dengan lagu.';
+      p.textContent = autoTried
+        ? 'Lirik tidak ditemukan untuk lagu ini · tempel manual di Settings > Music.'
+        : 'Belum ada lirik. Tempel teks LRC di Settings > Music, lalu tekan Mulai bersamaan dengan lagu.';
       box.appendChild(p);
       $('lyricMeta').textContent = 'Belum ada lirik';
       return;
@@ -701,6 +704,34 @@
     });
     lyricActive = -1;
     paintLyrics();
+  }
+
+  /* Auto lyrics consumer: renderer.js receives the fetched LRC and calls in.
+     A new LRC resets and STARTS the timeline so the lyric runs with the song
+     without the manual "Mulai" click. */
+  let autoLrc: string | null = null;
+  let autoTried = false;
+  (window as unknown as { aeoliaAutoLyric?: (lrc: string | null, title: string) => void })
+    .aeoliaAutoLyric = (lrc) => {
+      autoLrc = lrc;
+      autoTried = true;
+      if (lrc) {
+        lyricElapsed = 0;
+        lyricActive = -1;
+        lyricStartedAt = performance.now();
+        lyricRunning = true;
+      }
+      rebuildLyrics();
+      paintLyricControls();
+      paintLyrics();
+    };
+  // An event that arrived before panels.js loaded is waiting in renderer.js.
+  const pendingAuto = (window as unknown as {
+    aeoliaAutoLyricPendingGet?: () => { title: string; lrc: string | null } | null;
+  }).aeoliaAutoLyricPendingGet?.();
+  if (pendingAuto) {
+    (window as unknown as { aeoliaAutoLyric?: (lrc: string | null, title: string) => void })
+      .aeoliaAutoLyric?.(pendingAuto.lrc, pendingAuto.title);
   }
 
   function paintLyrics(): void {

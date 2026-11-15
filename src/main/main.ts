@@ -10,6 +10,7 @@ import { loadSettings, setValue } from './settings';
 import { readMedia } from './media';
 import { readPower } from './power';
 import { mediaNext, mediaPlayPause, mediaPrev } from './keys';
+import { fetchLyrics } from './lyrics';
 import { brightnessRange, pasteShortcut, setBrightness, toggleMute, volumeStep } from './systemControl';
 import { cleanRam, cpuPercent, memoryInfo } from './ramClean';
 import { registerCapture, disposeCapture } from './capture';
@@ -236,10 +237,17 @@ function pushStatus(): void {
 function pollMedia(): void {
   const next = readMedia();
   if (next.playing !== mediaPlaying || next.title !== mediaTitle) {
+    const titleChanged = next.title !== mediaTitle;
     mediaPlaying = next.playing;
     mediaTitle = next.title;
     island?.setMedia(mediaPlaying);
     pushStatus();
+    // A brand-new playing track pulls its synced lyrics once and pushes them.
+    if (mediaPlaying && titleChanged && mediaTitle) {
+      void fetchLyrics(mediaTitle).then((lrc) => {
+        win?.webContents.send('lyrics:auto-loaded', { title: mediaTitle, lrc });
+      });
+    }
   }
 }
 
