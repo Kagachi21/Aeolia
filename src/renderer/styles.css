@@ -142,9 +142,15 @@ input:disabled {
     0 12px 30px rgba(0, 0, 0, 0.34);
 }
 #island[data-surface="Liquid glass"] {
+  /* The base is a STABLE dark slate, not a tint of whatever sits behind the
+     window: a transparent Electron window shows the desktop through every
+     semi transparent layer, so a light desktop used to wash the pill out to a
+     pale blue grey and the same island looked different on every wallpaper
+     (the "warna belang" complaint). The white sheen stays on top for the
+     bevel; --glass-a still controls how much of the desktop is let through. */
   background:
-    linear-gradient(165deg, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 0.08) 30%, rgba(255, 255, 255, 0.02) 55%, rgba(255, 255, 255, 0.06) 100%),
-    linear-gradient(0deg, rgba(14, 18, 30, calc(0.3 + 0.52 * var(--glass-a, 0.55))) 0%, rgba(20, 26, 40, calc(0.22 + 0.44 * var(--glass-a, 0.55))) 100%);
+    linear-gradient(165deg, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0.06) 28%, rgba(255, 255, 255, 0.015) 55%, rgba(255, 255, 255, 0.05) 100%),
+    linear-gradient(0deg, rgba(20, 28, 24, calc(0.90 + 0.07 * var(--glass-a, 0.55))) 0%, rgba(28, 40, 34, calc(0.87 + 0.07 * var(--glass-a, 0.55))) 100%);
 }
 /* Translucent: the light frosted sibling. Text stays dark-on-light, so the
    tab and row tints flip to dark ink on a milky pane. */
@@ -179,6 +185,21 @@ input:disabled {
 #island[data-surface="Translucent"] .empty { color: #5a6373; }
 #island[data-surface="Translucent"] .panel :is(.title, .text, .ph-left span, .ph-left strong) { color: #232a38; }
 #island[data-surface="Translucent"] .panel :is(input, select, textarea) { color: #10141c; }
+
+/* Liquid glass secondary ink. The shared muted grey (#a3aabd) was picked for
+   the near black surfaces; on the glass pane the white sheen lifts the base by
+   roughly 20/255, so 8.5 px secondary text fell to ~3.1:1 over a light desktop.
+   Only the glass surface is lifted here, every other surface keeps #a3aabd. */
+#island[data-surface="Liquid glass"] .music-meta span,
+#island[data-surface="Liquid glass"] .music-times,
+#island[data-surface="Liquid glass"] .lyric-empty,
+#island[data-surface="Liquid glass"] .lyric-line:not(.active),
+#island[data-surface="Liquid glass"] .row .time,
+#island[data-surface="Liquid glass"] .row-head,
+#island[data-surface="Liquid glass"] .stat i,
+#island[data-surface="Liquid glass"] .hint,
+#island[data-surface="Liquid glass"] .empty,
+#island[data-surface="Liquid glass"] .cal-agenda span { color: #d3d8e4; }
 
 #island[data-accent="#ffffff"] { --accent: #ffffff; }
 #island[data-accent="#e9c46a"] { --accent: #e9c46a; }
