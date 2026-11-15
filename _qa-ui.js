@@ -448,6 +448,99 @@ async function rendererProbe() {
   await js(win, `window.probe.emit('status', { state: 'pill', meeting: false }); true`);
   await sleep(120);
 
+  /* ---- regresi 2026-11-15: [hidden] harus MENANG atas display dari id ----
+     #micPill dan #banner dulu memakai selector id yang membawa display:flex,
+     jadi aturan UA [hidden] { display: none } kalah dan layer tetap terlukis
+     (kartu mic hantu + teks banner terakhir menempel di pill). Sekarang
+     display hanya ada di :not([hidden]), dan #micPill adalah SAUDARA #island
+     supaya badan island bisa menyusut tanpa memotong kapsul. */
+  /* The meeting edge above queues a banner for 4,2 s; wait for the queue to
+     drain so the "idle" snapshot really is idle. */
+  for (let i = 0; i < 40; i += 1) {
+    const bannerHidden = await js(win, `document.getElementById('banner').hidden`);
+    if (bannerHidden) break;
+    await sleep(250);
+  }
+  const hiddenWins = await js(win, `(() => {
+    const mic = document.getElementById('micPill');
+    const banner = document.getElementById('banner');
+    const island = document.getElementById('island');
+    return {
+      state: island.dataset.state, meeting: island.dataset.meeting, mic: island.dataset.mic,
+      micHidden: mic.hidden, micDisplay: getComputedStyle(mic).display,
+      bannerHidden: banner.hidden, bannerDisplay: getComputedStyle(banner).display,
+      micBg: getComputedStyle(mic).backgroundColor,
+      micSibling: mic.parentElement === island.parentElement,
+      micInsideIsland: island.contains(mic),
+    };
+  })()`);
+  check('regresi: [hidden] menang -> micPill display:none saat idle (dulu flex)',
+    hiddenWins.micHidden === true && hiddenWins.micDisplay === 'none', JSON.stringify(hiddenWins));
+  check('regresi: [hidden] menang -> banner display:none saat idle (dulu flex)',
+    hiddenWins.bannerHidden === true && hiddenWins.bannerDisplay === 'none',
+    JSON.stringify({ hidden: hiddenWins.bannerHidden, display: hiddenWins.bannerDisplay }));
+  check('regresi: micPill SAUDARA #island, bukan anak (badan bisa menyusut)',
+    hiddenWins.micSibling === true && hiddenWins.micInsideIsland === false,
+    JSON.stringify({ sibling: hiddenWins.micSibling, inside: hiddenWins.micInsideIsland }));
+  check('regresi: micPill tidak melukis kartu (background transparan)',
+    hiddenWins.micBg === 'rgba(0, 0, 0, 0)' || hiddenWins.micBg === 'transparent',
+    hiddenWins.micBg);
+
+  /* The real failure mode: an id-level display rule outranks [hidden]. Toggle
+     the attribute on the VISIBLE layer - the layer must go display:none even
+     though its own rule asks for flex. */
+  await js(win, `window.probe.emit('status', { state: 'pill', meeting: true, meetingMicButton: true }); true`);
+  await sleep(220);
+  const toggleHidden = await js(win, `(() => {
+    const mic = document.getElementById('micPill');
+    const island = document.getElementById('island');
+    const shown = getComputedStyle(mic).display;
+    mic.hidden = true;
+    const forced = getComputedStyle(mic).display;   // style recalc is forced here
+    mic.hidden = false;
+    const restored = getComputedStyle(mic).display;
+    const cs = getComputedStyle(island);
+    return { shown, forced, restored, bg: getComputedStyle(mic).backgroundColor,
+      pos: island.dataset.pos, islandRight: cs.right, islandLeft: cs.left,
+      extra: cs.getPropertyValue('--mic-extra').trim() };
+  })()`);
+  check('regresi: set hidden pada layer yang tampil -> langsung display:none',
+    toggleHidden.shown === 'flex' && toggleHidden.forced === 'none'
+      && toggleHidden.restored === 'flex', JSON.stringify(toggleHidden));
+  check('regresi: micPill tampil tetap transparan (kapsul saja yang terlukis)',
+    toggleHidden.bg === 'rgba(0, 0, 0, 0)' || toggleHidden.bg === 'transparent',
+    toggleHidden.bg);
+  check('regresi: rapat (center) -> #island memberi strip kanan (right = --mic-extra)',
+    toggleHidden.pos === 'center' && toggleHidden.islandRight === toggleHidden.extra
+      && toggleHidden.islandRight !== '0px' && toggleHidden.islandLeft === '0px',
+    JSON.stringify({ pos: toggleHidden.pos, right: toggleHidden.islandRight, left: toggleHidden.islandLeft, extra: toggleHidden.extra }));
+
+  /* Same reservation on a left island (no side flip: the strip stays right). */
+  await js(win, `window.probe.emit('settings', { islandPosition: 'left' }); true`);
+  await sleep(200);
+  const leftInset = await js(win, `(() => { const island = document.getElementById('island');
+    const cs = getComputedStyle(island);
+    return { pos: island.dataset.pos, right: cs.right, left: cs.left,
+      extra: cs.getPropertyValue('--mic-extra').trim() }; })()`);
+  check('regresi: rapat (left) -> strip kanan tetap dipesan',
+    leftInset.pos === 'left' && leftInset.right === leftInset.extra && leftInset.right !== '0px',
+    JSON.stringify(leftInset));
+
+  /* Right-hand island flips the reservation to the left side. */
+  await js(win, `window.probe.emit('settings', { islandPosition: 'right' }); true`);
+  await sleep(200);
+  const rightInset = await js(win, `(() => { const island = document.getElementById('island');
+    const cs = getComputedStyle(island);
+    return { pos: island.dataset.pos, right: cs.right, left: cs.left,
+      extra: cs.getPropertyValue('--mic-extra').trim() }; })()`);
+  check('regresi: rapat (right) -> strip pindah ke kiri (left = --mic-extra, right = 0)',
+    rightInset.pos === 'right' && rightInset.left === rightInset.extra
+      && rightInset.right === '0px' && rightInset.left !== '0px',
+    JSON.stringify(rightInset));
+  await js(win, `window.probe.emit('settings', { islandPosition: 'center' }); true`);
+  await js(win, `window.probe.emit('status', { state: 'pill', meeting: false }); true`);
+  await sleep(200);
+
   /* ---- glass themes: --glass-a var follows glassLevel ---- */
   await js(win, `window.probe.emit('settings', { surface: 'Translucent', glassLevel: 70 }); true`);
   await sleep(120);
