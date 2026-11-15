@@ -1419,13 +1419,34 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 }
 /* Six shapes. All bind to the lyric timeline; the decoration only changes
    how the same progress is drawn. */
-.music-progress[data-style="Wave"] { height: 7px; }
-.music-progress[data-style="Wave"] .mp-fill {
-  background:
-    repeating-linear-gradient(115deg, var(--accent) 0 4px, color-mix(in srgb, var(--accent) 55%, transparent) 4px 8px);
-  animation: mp-wave 1.2s linear infinite;
+/* Wave: a sine line, not a striped bar. The track is the whole wave; the fill
+   is the same path masked to --mp-pct so the accent only reaches the played
+   part. The SVG is stretched (preserveAspectRatio="none"), hence
+   non-scaling-stroke, or the stroke would be squashed with the geometry. */
+.music-progress[data-style="Wave"] { height: 14px; background: transparent; overflow: hidden; }
+.music-progress[data-style="Wave"] .mp-fill { display: none; }
+/* The wave markup is always in the DOM, so it must stay out of the other five
+   styles: display none by default, block only for Wave. */
+.mp-wave { display: none; position: absolute; inset: 0; width: 100%; height: 100%; }
+.mp-wave-fillwrap { display: none; }
+.music-progress[data-style="Wave"] .mp-wave { display: block; }
+.music-progress[data-style="Wave"] .mp-wave-fillwrap { display: block; }
+.mp-wave path { fill: none; stroke-width: 2; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.mp-wave-track { stroke: rgba(255, 255, 255, 0.16); }
+.mp-wave-fill { stroke: var(--accent); }
+/* The mask sits on the wrapper, not on the sliding SVG: a mask on the animated
+   element would travel with it and the played edge would wobble by a whole
+   wavelength. */
+.music-progress[data-style="Wave"] .mp-wave-fillwrap {
+  position: absolute; inset: 0;
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(var(--mp-pct, 0) * 1%), transparent calc(var(--mp-pct, 0) * 1%));
+  mask-image: linear-gradient(90deg, #000 calc(var(--mp-pct, 0) * 1%), transparent calc(var(--mp-pct, 0) * 1%));
 }
-@keyframes mp-wave { to { background-position: 16px 0; } }
+/* One wavelength is 20 of the 220 viewBox units, i.e. 9.0909% of the painted
+   width. A fixed 20px slide would only line up on a 220px wide strip and jump
+   on every other card width, so the loop moves by exactly one wavelength. */
+.music-progress[data-style="Wave"] .mp-wave-slide { animation: mp-slide 1.2s linear infinite; }
+@keyframes mp-slide { to { transform: translateX(-9.0909%); } }
 .music-progress[data-style="Pixels"] { height: 7px; background: transparent; }
 .music-progress[data-style="Pixels"] .mp-fill {
   border-radius: 1px;
@@ -1480,7 +1501,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .music-vol input { flex: 1; min-width: 0; accent-color: var(--accent); height: 3px; }
 
 @media (prefers-reduced-motion: reduce) {
-  .mp-fill, .media-viz i { animation: none !important; }
+  .mp-fill, .mp-wave-slide, .media-viz i { animation: none !important; }
 }
 
 @media (prefers-reduced-motion: reduce) {

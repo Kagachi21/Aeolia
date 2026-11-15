@@ -201,6 +201,20 @@
               </div>
               <div class="music-progress" id="musicProgress" data-style="Simple" role="progressbar" aria-label="Kemajuan lirik">
                 <div class="mp-fill" id="musicFill"></div>
+                <!-- Wave style: a real sine line instead of a striped bar. The
+                     track is a static SVG; the accent line lives inside a
+                     wrapper that carries the progress mask, so the sliding
+                     animation never drags the mask edge with it. Both paths run
+                     one wavelength past the 220 unit viewBox so the loop has no
+                     bare gap at the right edge. -->
+                <svg class="mp-wave" viewBox="0 0 220 14" preserveAspectRatio="none" aria-hidden="true">
+                  <path class="mp-wave-track" d="M0 7 Q 5 1 10 7 T 20 7 T 30 7 T 40 7 T 50 7 T 60 7 T 70 7 T 80 7 T 90 7 T 100 7 T 110 7 T 120 7 T 130 7 T 140 7 T 150 7 T 160 7 T 170 7 T 180 7 T 190 7 T 200 7 T 210 7 T 220 7 T 230 7 T 240 7" />
+                </svg>
+                <div class="mp-wave-fillwrap">
+                  <svg class="mp-wave mp-wave-slide" viewBox="0 0 220 14" preserveAspectRatio="none" aria-hidden="true">
+                    <path class="mp-wave-fill" d="M0 7 Q 5 1 10 7 T 20 7 T 30 7 T 40 7 T 50 7 T 60 7 T 70 7 T 80 7 T 90 7 T 100 7 T 110 7 T 120 7 T 130 7 T 140 7 T 150 7 T 160 7 T 170 7 T 180 7 T 190 7 T 200 7 T 210 7 T 220 7 T 230 7 T 240 7" />
+                  </svg>
+                </div>
               </div>
               <div class="music-times"><span id="musicTimeCur">0:00</span><span id="musicTimeEnd">--:--</span></div>
               <div class="music-volrow">
