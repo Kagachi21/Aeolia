@@ -544,6 +544,29 @@ async function rendererProbe() {
   check('Regresi media pill menampilkan judul lagu', media.box !== 'none' && media.title.includes('QA Track'),
     JSON.stringify(media));
 
+  /* ---- card musik sesuai referensi ---- */
+  await js(win, `window.probe.emit('status', { state: 'open', visibleTabs: ['music'] }); true`);
+  await sleep(150);
+  await js(win, `window.probe.emit('lyrics', { title: 'Kavi Rao - Neon Harbor', lrc: '[00:01.00] satu\\n[00:04.00] dua' }); true`);
+  await sleep(150);
+  await js(win, `window.probe.emit('status', { state: 'open', media: true, mediaTitle: 'Kavi Rao - Neon Harbor' }); true`);
+  await sleep(150);
+  const mcard = await js(win, `(() => { const art = document.getElementById('musicArt');
+    const cs = getComputedStyle(art, '::after');
+    const row = art.closest('.music-now');
+    return { gClass: /(^| )g[0-5]( |$)/.test(art.className), badge: cs.content !== 'none' && cs.content !== 'normal',
+      title: document.getElementById('musicTitle').textContent,
+      sub: document.getElementById('musicSub').textContent,
+      end: document.getElementById('musicTimeEnd').textContent,
+      transportInRow: !!row.querySelector('.music-transport'),
+      volRow: !!document.querySelector('.music-volrow') }; })()`);
+  check('card musik: art gradient konsisten + badge not di pojok',
+    mcard.gClass && mcard.badge, JSON.stringify({ gClass: mcard.gClass, badge: mcard.badge }));
+  check('card musik: judul lagu + artis terpisah (bukan teks kontrol)',
+    mcard.title === 'Neon Harbor' && mcard.sub === 'Kavi Rao', JSON.stringify({ t: mcard.title, s: mcard.sub }));
+  check('card musik: waktu kanan format sisa, transport sejajar judul, volume di baris sendiri',
+    /^-0:0[2-4]$/.test(mcard.end) && mcard.transportInRow && mcard.volRow, JSON.stringify(mcard));
+
   await js(win, `window.probe.emit('settings', { barOrder: ['cat', 'clock', 'battery', 'media', 'mic'] }); true`);
   await sleep(120);
   const bar = await js(win, `(() => ({ clockRank: document.getElementById('clock').dataset.barRank,

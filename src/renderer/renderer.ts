@@ -169,6 +169,9 @@ function paintMedia(title: string): void {
   mediaTrack.dataset.title = title;
   mediaText.dataset.scroll = 'false';
   mediaTrack.textContent = title;
+  // The music card reads this title too; repaint it now instead of waiting
+  // for the one-second clock tick.
+  paintMusic();
   requestAnimationFrame(() => {
     if (mediaTrack.scrollWidth <= mediaText.clientWidth + 1) return;
     const unit = `${title}   ·   `;
@@ -284,7 +287,7 @@ let lastMeetingSeen = false;
 let callAnimTimer: number | null = null;
 
 /* Banner-friendly states: pill and open only. The mini notch shows the clock
-   and nothing else — a banner arriving there waits in the queue until the
+   and nothing else. A banner arriving there waits in the queue until the
    island peeks to pill (hover/click), so the notch is never overwritten. */
 const bannerOk = (): boolean => root.dataset.state === 'pill' || root.dataset.state === 'open';
 
@@ -1160,13 +1163,26 @@ musicVolSlider.addEventListener('change', () => {
 
 const fmtSec = (s: number): string => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
+/** Deterministic gradient class per title, so the same song always paints the
+    same album-style art (Windows gives us no real cover). */
+function artGradientClass(title: string): string {
+  let h = 0;
+  for (let i = 0; i < title.length; i++) h = (h * 31 + title.charCodeAt(i)) | 0;
+  return `g${Math.abs(h) % 6}`;
+}
+
 function paintMusic(): void {
   const playing = root.dataset.media === 'true';
-  const title = mediaTrack.dataset.title ?? '';
-  musicTitle.textContent = playing && title ? title : 'Tidak ada lagu';
-  musicSub.textContent = playing
-    ? 'Kontrol memakai tombol media pemutar aktif'
-    : 'Putar musik di pemutar mana pun';
+  const raw = mediaTrack.dataset.title ?? '';
+  // "Artist - Song" splits like the reference card; a bare title keeps the
+  // generic source line so nothing is invented.
+  const sep = raw.indexOf(' - ');
+  const song = sep > 0 ? raw.slice(sep + 3).trim() : raw;
+  const artist = sep > 0 ? raw.slice(0, sep).trim() : '';
+  musicTitle.textContent = playing && song ? song : 'Tidak ada lagu';
+  musicSub.textContent = playing ? (artist || 'Pemutar media') : 'Putar musik di pemutar mana pun';
+  musicArt.classList.remove('g0', 'g1', 'g2', 'g3', 'g4', 'g5');
+  if (playing && song) musicArt.classList.add(artGradientClass(song));
   musicPlayBtn.setAttribute('aria-pressed', String(playing));
   musicCard.dataset.playing = String(playing);
   const vizMode = root.dataset.viz ?? 'pixels';
@@ -1186,7 +1202,8 @@ function paintMusic(): void {
   musicProgress.style.setProperty('--mp-pct', pct.toFixed(1));
   musicProgress.dataset.empty = String(!hasLyric);
   musicTimeCur.textContent = hasLyric ? fmtSec(snap!.at) : '0:00';
-  musicTimeEnd.textContent = hasLyric ? fmtSec(snap!.total) : '--:--';
+  // Right side shows what is LEFT of the lyric timeline, like the reference.
+  musicTimeEnd.textContent = hasLyric ? `-${fmtSec(Math.max(0, snap!.total - snap!.at))}` : '--:--';
   if (!hasLyric) {
     musicProgress.title = 'Progress mengikuti lirik LRC. Tambahkan lirik di Settings > Music.';
   } else {

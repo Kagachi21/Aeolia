@@ -1307,12 +1307,35 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
     linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
 }
 .music-now { display: flex; align-items: center; gap: 8px; }
+/* Album-style art: a big gradient square with a pinned note badge. The
+   gradient comes from artGradientClass (g0..g5) so one song keeps one look. */
 .music-art {
-  width: 28px; height: 28px; border-radius: 7px; flex: none;
+  position: relative;
+  width: 44px; height: 44px; border-radius: 9px; flex: none;
   display: grid; place-items: center;
   background: color-mix(in srgb, var(--accent) 24%, #14161d);
 }
-.music-art svg { width: 14px; height: 14px; fill: none; stroke: var(--accent); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.music-art.g0 { background: linear-gradient(160deg, #ff7a59, #b23a67 70%, #3d1c4d); }
+.music-art.g1 { background: linear-gradient(160deg, #4fc3f7, #3457d5 70%, #131a45); }
+.music-art.g2 { background: linear-gradient(160deg, #ffd166, #ef6f3c 70%, #4d1f1c); }
+.music-art.g3 { background: linear-gradient(160deg, #7bd88f, #2f9e6e 70%, #123528); }
+.music-art.g4 { background: linear-gradient(160deg, #c792ea, #7c4dff 70%, #241454); }
+.music-art.g5 { background: linear-gradient(160deg, #64dfdf, #2b7de9 70%, #10264d); }
+/* Note badge pinned to the art's bottom-right corner, like the reference. */
+.music-art::after {
+  content: '\266A';
+  position: absolute;
+  right: -5px; bottom: -5px;
+  width: 16px; height: 16px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  background: #f06292;
+  color: #fff;
+  font-size: 9px;
+  line-height: 1;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+}
+.music-art svg { width: 18px; height: 18px; fill: none; stroke: rgba(255, 255, 255, 0.9); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .music-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .music-meta strong {
   font-size: 11px; font-weight: 700; color: #f2f5ff;
@@ -1377,7 +1400,9 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   margin-top: 3px; font-size: 8.5px; color: #a3aabd;
   font-variant-numeric: tabular-nums;
 }
-.music-transport { display: flex; align-items: center; gap: 4px; margin-top: 4px; }
+/* Transport sits in the title row (right edge), volume on its own centred
+   row. Both match the reference card layout. */
+.music-transport { display: flex; align-items: center; gap: 4px; margin-left: auto; }
 .mt-btn {
   width: 24px; height: 24px;
   display: grid; place-items: center;
@@ -1391,7 +1416,8 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .mt-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .mt-play { width: 28px; height: 28px; background: var(--accent); color: #101014; border-color: var(--accent); }
 .mt-play:hover { background: color-mix(in srgb, var(--accent) 85%, #fff); }
-.music-vol { display: flex; align-items: center; gap: 5px; flex: 1; min-width: 0; margin-left: 4px; }
+.music-volrow { display: flex; justify-content: center; margin-top: 5px; }
+.music-vol { display: flex; align-items: center; gap: 5px; width: 62%; min-width: 0; }
 .music-vol svg { width: 11px; height: 11px; fill: none; stroke: #a3aabd; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 .music-vol input { flex: 1; min-width: 0; accent-color: var(--accent); height: 3px; }
 
