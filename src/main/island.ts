@@ -100,9 +100,11 @@ export class Island {
   }
 
   setBase(next: BaseState): void {
-    // A peeked island (state pill, base mini) must also shrink back when the
-    // poll re-asserts the same base, so the early return needs BOTH equal.
-    if (this.base === next && this.state === next) return;
+    // Same base is a no-op, even while peeked: the window poll re-asserts the
+    // base constantly and must NOT shrink the hover peek back (they fought
+    // every poll tick before — the island flickered and hover cards died).
+    // Returning from a peek is close()'s job, driven by the hover zone.
+    if (this.base === next) return;
     this.base = next;
     if (this.state !== 'open') this.transition(next);
   }
@@ -118,7 +120,9 @@ export class Island {
   }
 
   close(): void {
-    if (this.state === 'open') this.transition(this.base);
+    if (this.state === 'open') { this.transition(this.base); return; }
+    // A peeked notch (state pill, base mini) goes back to the notch on leave.
+    if (this.state === 'pill' && this.base === 'mini') this.transition('mini');
   }
 
   private transition(next: IslandState): void {

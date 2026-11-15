@@ -483,6 +483,8 @@ app.whenReady().then(() => {
 
   ipcMain.on('card:height', (_e, height: number) => island?.setOpenHeight(height));
   ipcMain.on('banner:show', (_e, active: boolean) => island?.setBanner(Boolean(active)));
+  // Clicking the small notch expands the island into the open card.
+  ipcMain.handle('island:open', () => island?.open());
 
   ipcMain.on('settings:window', () => openSettingsWindow());
   ipcMain.handle('settings:get', () => loadSettings());

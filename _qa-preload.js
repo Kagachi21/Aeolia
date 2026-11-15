@@ -120,6 +120,7 @@ contextBridge.exposeInMainWorld('api', {
   pauseMedia: () => record('pauseMedia', null),
   playMedia: () => record('playMedia', null),
   bannerShow: (active) => record('bannerShow', active),
+  islandOpen: () => record('islandOpen', null),
   noticeReply: async (app, body, text) => {
     record('noticeReply', { app, body, text });
     return { opened: true };

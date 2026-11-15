@@ -280,11 +280,18 @@ Module._load = function (request, parent, isMain) {
       check('peek: notch mengembang ke pil 150x36 dan base tetap mini',
         cur.width === 150 && cur.height === 36 && isl.baseState === 'mini',
         `${cur.width}x${cur.height} base=${isl.baseState}`);
-      // Returning is the poller's job (pollActiveWindow -> setBase), close()
-      // only leaves the open card.
+      // Peek must SURVIVE the window poll re-asserting the same base: the old
+      // setBase shrank a peeked island every poll, fighting pollHoverZone's
+      // re-assert (island flickered mini<->pill and the hover card never came).
       isl.setBase('mini');
       await new Promise((r) => setTimeout(r, 90));
-      check('setBase setelah peek: kembali ke notch 140x30',
+      check('setBase re-assert TIDAK membatalkan peek (tetap pil 150x36)',
+        cur.width === 150 && cur.height === 36 && isl.baseState === 'mini',
+        `${cur.width}x${cur.height} base=${isl.baseState}`);
+      // Leaving the notch is the hover zone's job: close() returns the peek.
+      isl.close();
+      await new Promise((r) => setTimeout(r, 90));
+      check('close() setelah peek: kembali ke notch 140x30',
         cur.width === 140 && cur.height === 30, `${cur.width}x${cur.height}`);
       if (typeof isl.setBanner === 'function') {
         isl.setBanner(true);
@@ -376,6 +383,7 @@ Module._load = function (request, parent, isMain) {
 
   /* --- notice:reply = clipboard + deep-link open --- */
   check('IPC notice:reply terdaftar (handle)', ipcHandle.has('notice:reply'));
+  check('IPC island:open terdaftar (klik notch expand)', ipcHandle.has('island:open'));
   const clipWrites = [];
   electronMock.clipboard.writeText = (t) => clipWrites.push(t);
   const replyKnown = await ipcHandle.get('notice:reply')(null, 'WhatsApp', 'duren', 'oke bentar');

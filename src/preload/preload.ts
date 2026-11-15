@@ -68,6 +68,7 @@ contextBridge.exposeInMainWorld('api', {
   pauseMedia: () => ipcRenderer.send('media:pause'),
   playMedia: () => ipcRenderer.send('media:play'),
   bannerShow: (active: boolean) => ipcRenderer.send('banner:show', active),
+  islandOpen: () => ipcRenderer.invoke('island:open'),
   noticeReply: (app: string, body: string, text: string) => ipcRenderer.invoke('notice:reply', app, body, text),
   prevMedia: () => ipcRenderer.send('media:prev'),
   nextMedia: () => ipcRenderer.send('media:next'),

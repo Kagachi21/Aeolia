@@ -376,6 +376,16 @@ async function rendererProbe() {
   await js(win, `window.probe.emit('status', { state: 'pill', meeting: false }); true`);
   await sleep(4600);
 
+  /* ---- klik notch mini: expand lewat IPC island:open ---- */
+  await js(win, `window.probe.emit('status', { state: 'mini', miniMode: 'clock' }); true`);
+  await sleep(120);
+  await js(win, `document.getElementById('mini').click(); true`);
+  await sleep(120);
+  const openCalls = await js(win, `window.probe.calls().filter((c) => c.kind === 'islandOpen').length`);
+  check('klik notch mini memanggil island:open (expand)', openCalls >= 1, String(openCalls));
+  await js(win, `window.probe.emit('status', { state: 'pill', meeting: false }); true`);
+  await sleep(4600);
+
   /* ---- mic pill: separate layer, joining -> on, hidden when idle ---- */
   const micIdle = await js(win, `(() => { const p = document.getElementById('micPill');
     return { exists: !!p, hidden: p ? p.hidden : null, mic: document.getElementById('island').dataset.mic }; })()`);

@@ -168,6 +168,7 @@ declare global {
       pauseMedia(): void;
       playMedia(): void;
       bannerShow(active: boolean): void;
+      islandOpen(): Promise<void>;
       noticeReply(app: string, body: string, text: string): Promise<{ opened: boolean }>;
       prevMedia(): void;
       nextMedia(): void;

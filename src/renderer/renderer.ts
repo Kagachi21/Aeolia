@@ -92,6 +92,11 @@ const bnAvatar = document.getElementById('bnAvatar') as HTMLElement;
 const bnTitle = document.getElementById('bnTitle') as HTMLElement;
 const bnBody = document.getElementById('bnBody') as HTMLElement;
 
+/* Clicking the small notch expands the island into the open card. The window
+   is click-through while the notch shows, so this fires once hover has peeked
+   the island to the pill (clicks then land on the real window). */
+miniLayer.addEventListener('click', () => { window.api.islandOpen(); });
+
 function applyScale(): void {
   const zoom = Math.min(1.3, Math.max(0.75, (Number(root.dataset.scale) || 100) / 100));
   for (const el of [pillLayer, miniLayer, micPillLayer, bannerLayer, openLayer]) {
