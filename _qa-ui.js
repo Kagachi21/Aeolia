@@ -671,8 +671,9 @@ async function rendererProbe() {
     return { dynamic: c.dataset.dynamic, vars: ['--mc-1', '--mc-2', '--mc-3'].map((v) => c.style.getPropertyValue(v)),
       bg: getComputedStyle(c).backgroundImage, art: getComputedStyle(document.getElementById('musicArt')).backgroundImage }; })()`;
   const bg0 = await js(win, bgState);
-  check('Regresi musicbg: awal data-dynamic false, tanpa --mc-N',
-    bg0.dynamic === 'false' && bg0.vars.every((v) => v === ''), JSON.stringify(bg0.dynamic));
+  check('Regresi musicbg: lagu jalan langsung pakai palet fallback (tidak panel abu-abu)',
+    bg0.dynamic === 'fallback' && bg0.vars.length === 3
+      && bg0.vars.every((v) => /^#[0-9a-f]{6}$/i.test(v)), JSON.stringify(bg0.dynamic));
   const track = 'Kavi Rao - Neon Harbor';
   const pal = { c1: '#c8412f', c2: '#7b3fa8', c3: '#242a4a' };
   await js(win, `window.probe.emit('musicColors', ${JSON.stringify({ title: track, colors: pal })}); true`);
@@ -685,14 +686,16 @@ async function rendererProbe() {
   await js(win, `window.probe.emit('musicColors', ${JSON.stringify({ title: track, colors: null })}); true`);
   await sleep(180);
   const bgOff = await js(win, bgState);
-  check('Regresi musicbg: lookup gagal kembali ke fallback hash, variabel dihapus',
-    bgOff.dynamic === 'false' && bgOff.vars.every((v) => v === '')
-      && bgOff.bg === bg0.bg && bgOff.art === bg0.art, JSON.stringify(bgOff.vars));
+  check('Regresi musicbg: lookup gagal tetap berwarna lewat palet fallback',
+    bgOff.dynamic === 'fallback' && bgOff.vars.length === 3
+      && bgOff.vars.every((v) => /^#[0-9a-f]{6}$/i.test(v))
+      && bgOff.vars.join('|') === bg0.vars.join('|'), JSON.stringify(bgOff.vars));
   await js(win, `window.probe.emit('musicColors', ${JSON.stringify({ title: 'Lagu Lain - Judul', colors: pal })}); true`);
   await sleep(150);
   const bgStale = await js(win, bgState);
   check('Regresi musicbg: balasan untuk lagu lain diabaikan',
-    bgStale.dynamic === 'false' && bgStale.vars.every((v) => v === ''), JSON.stringify(bgStale.vars));
+    bgStale.dynamic === bgOff.dynamic && bgStale.vars.join('|') === bgOff.vars.join('|'),
+    JSON.stringify(bgStale.vars));
   await js(win, `window.probe.emit('status', { musicCardBackground: 'plain' }); true`);
   await js(win, `window.probe.emit('settings', { musicCardBackground: 'plain' }); true`);
   await sleep(180);
@@ -700,8 +703,9 @@ async function rendererProbe() {
   await sleep(180);
   const bgPlain = await js(win, bgState);
   check('Regresi musicbg: setting plain tidak berubah sama sekali',
-    bgPlain.dynamic === 'false' && bgPlain.vars.every((v) => v === '') && bgPlain.bg === bg0.bg,
-    JSON.stringify({ dynamic: bgPlain.dynamic, vars: bgPlain.vars }));
+    bgPlain.dynamic === 'false' && bgPlain.vars.every((v) => v === '')
+      && !bgPlain.bg.includes('radial-gradient'),
+    JSON.stringify({ dynamic: bgPlain.dynamic, bg: bgPlain.bg.slice(0, 50) }));
   await js(win, `window.probe.emit('status', { musicCardBackground: 'album' }); true`);
   await js(win, `window.probe.emit('settings', { musicCardBackground: 'album' }); true`);
   await sleep(150);
