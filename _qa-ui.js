@@ -397,6 +397,12 @@ async function rendererProbe() {
   await sleep(120);
   const openCalls = await js(win, `window.probe.calls().filter((c) => c.kind === 'islandOpen').length`);
   check('klik notch mini memanggil island:open (expand)', openCalls >= 1, String(openCalls));
+  /* In production the peek already flipped state to pill, so the click lands
+     on #pill, not #mini. The pill must open the card too. */
+  await js(win, `document.getElementById('pill').click(); true`);
+  await sleep(120);
+  const openCalls2 = await js(win, `window.probe.calls().filter((c) => c.kind === 'islandOpen').length`);
+  check('klik pill (hasil peek) juga memanggil island:open', openCalls2 >= 2, String(openCalls2));
   await js(win, `window.probe.emit('status', { state: 'pill', meeting: false }); true`);
   await sleep(4600);
 
