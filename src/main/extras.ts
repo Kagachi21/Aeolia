@@ -21,12 +21,14 @@ export type ExtrasState = {
 };
 
 /* Apps that ARE a meeting while they run (dedicated conferencing tools). Chat
-   apps (WhatsApp, Telegram, LINE, Signal) are excluded on purpose: they run
+   apps (WhatsApp, Telegram, Discord, Slack) are excluded on purpose: they run
    all day, so counting them made the island claim a meeting was on when none
-   was — the whatsapp.root false positive. */
-const MEETING_APPS = /zoom|msteams|teams|skype|discord|webex|slack|google meet|meet\.google|facetime|jitsi|bluejeans/i;
-/* A voice/video call in ANY app: window titles announce it. */
-const CALL_WORDS = /(voice|video)[ -]?(call|chat)|incoming[ -]?call|outgoing[ -]?call|ringing|in call|panggilan|meeting|rapat|meet\.google/i;
+   was — Discord chat windows lit meeting mode with no call in sight. */
+const MEETING_APPS = /zoom|msteams|teams|skype|webex|google meet|meet\.google|facetime|jitsi|bluejeans/i;
+/* A voice/video call in ANY app: window titles announce it. Bare words like
+   "meeting" or "rapat" are NOT call words — channel and tab names contain
+   them constantly. Only explicit call phrases count. */
+const CALL_WORDS = /(voice|video)[ -]?(call|chat)|incoming[ -]?call|outgoing[ -]?call|ringing|in call|panggilan|voice connected|huddle|meet\.google/i;
 
 /** Pure matcher so probes can pin the false-positive behaviour. */
 export function matchesCall(label: string): boolean {

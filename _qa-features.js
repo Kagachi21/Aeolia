@@ -318,7 +318,18 @@ Module._load = function (request, parent, isMain) {
   check('WhatsApp biasa bukan rapat (false positive whatsapp.root diperbaiki)',
     extrasMod.matchesCall('WhatsApp WhatsApp 2') === false, extrasMod.matchesCall('WhatsApp WhatsApp 2'));
   check('Telegram saja bukan rapat', extrasMod.matchesCall('Telegram Telegram') === false);
-  check('jendela Discord terdeteksi (aplikasi meeting)', extrasMod.matchesCall('Discord | Wibverse 3.0') === true);
+  check('jendela Discord chat biasa BUKAN rapat (false positive discord)',
+    extrasMod.matchesCall('Discord | Wibverse 3.0') === false, extrasMod.matchesCall('Discord | Wibverse 3.0'));
+  check('judul Discord berisi kata rapat di nama channel bukan call',
+    extrasMod.matchesCall('Discord | #rapat-malam') === false, extrasMod.matchesCall('Discord | #rapat-malam'));
+  check('Discord voice call terdeteksi',
+    extrasMod.matchesCall('Discord | Voice Call') === true);
+  check('Discord video call terdeteksi',
+    extrasMod.matchesCall('Discord | Video Call dengan Ana') === true);
+  check('Discord voice connected terdeteksi',
+    extrasMod.matchesCall('Discord | @budi · Voice Connected') === true);
+  check('Slack chat biasa bukan rapat',
+    extrasMod.matchesCall('Slack | #general Aeolia') === false, extrasMod.matchesCall('Slack | #general Aeolia'));
   check('Zoom terdeteksi', extrasMod.matchesCall('Zoom Meeting 12345') === true);
   check('jendela voice call aplikasi apa pun terdeteksi',
     extrasMod.matchesCall('Voice call with Bila') === true);
