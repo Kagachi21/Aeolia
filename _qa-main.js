@@ -382,6 +382,15 @@ async function main() {
   check('Bug2 hover pada notch: island peek ke pill dan timer buka kartu terpasang',
     lastStatus()?.state === 'pill' && armedNotch.includes(444),
     `state=${lastStatus()?.state} pending=${JSON.stringify(armedNotch)}`);
+  /* Banner return-to-mini while the cursor is still on the notch: the hover
+     zone did not change, so the next tick must re-assert the peek. */
+  send('banner:show', true);
+  send('banner:show', false);
+  check('Bug2 banner selesai saat kursor masih di atas: pulih ke notch',
+    lastStatus()?.state === 'mini', `state=${lastStatus()?.state}`);
+  hoverAt(b.x + 5, b.y + 2);
+  check('Bug2 tick hover berikutnya mem-peek ulang notch yang tertutup banner',
+    lastStatus()?.state === 'pill', `state=${lastStatus()?.state}`);
   fireTimeouts();
   check('Bug2 firing the notch hover timer really opens the card',
     lastStatus()?.state === 'open', JSON.stringify(lastStatus()));

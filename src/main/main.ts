@@ -421,6 +421,9 @@ function pollHoverZone(): void {
   const gapTop = Math.min(b.y, display.y);
   const inGap = p.y >= gapTop && p.y < b.y;
   const inside = withinX && (overWindow || inGap);
+  // Re-assert the peek on every tick while the cursor rests on the notch: a
+  // banner that returns the island to mini must not swallow the expansion.
+  if (inside && island.current === 'mini') island.peek();
   if (inside === zoneInside) return;
   zoneInside = inside;
   win.webContents.send('island:hover', inside);
