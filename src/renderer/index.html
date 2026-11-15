@@ -82,20 +82,6 @@
         </span>
       </div>
 
-      <!-- Separate mic capsule: reserved space comes from the window bounds
-           (MIC_PILL_EXTRA), so it sits beside the island with a real gap. -->
-      <div id="micPill" class="layer" hidden>
-        <button class="meeting-mic" id="meetingMic" type="button" aria-label="Bisukan mikrofon" title="Bisukan mikrofon saat rapat">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
-          <span class="mic-label">Mic</span>
-          <span class="mic-dot" aria-hidden="true"></span>
-        </button>
-        <button class="meeting-cam" id="meetingCam" type="button" aria-label="Kamera meeting" title="Kamera meeting">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="12" height="10" rx="2"/><path d="m15 10 6-3v10l-6-3"/></svg>
-          <span class="cam-label">Cam</span>
-        </button>
-      </div>
-
       <div id="open" class="layer">
         <nav class="tabs" id="tabs" aria-label="Panel tabs">
           <span class="cat-slot brand-cat" id="brandCatSlot"></span>
@@ -390,6 +376,24 @@
         </main>
       </div>
     </div>
+
+    <!-- Separate mic capsules. They sit OUTSIDE #island on purpose: the window
+         reserves MIC_PILL_EXTRA logical px, #island gives that strip back, so
+         only the two buttons are painted there and nothing dark or frosted
+         ends up behind them. A sibling of #island, never a child, so the island
+         body can shrink without clipping them. -->
+    <div id="micPill" class="layer" hidden>
+      <button class="meeting-mic" id="meetingMic" type="button" aria-label="Bisukan mikrofon" title="Bisukan mikrofon saat rapat">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+        <span class="mic-label">Mic</span>
+        <span class="mic-dot" aria-hidden="true"></span>
+      </button>
+      <button class="meeting-cam" id="meetingCam" type="button" aria-label="Kamera meeting" title="Kamera meeting">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="12" height="10" rx="2"/><path d="m15 10 6-3v10l-6-3"/></svg>
+        <span class="cam-label">Cam</span>
+      </button>
+    </div>
+
     <script src="renderer.js"></script>
     <script src="panels.js"></script>
   </body>

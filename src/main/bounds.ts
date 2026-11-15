@@ -26,8 +26,11 @@ export function effectiveScalePct(settings: Settings): number {
   return Math.min(130, Math.max(75, Math.round((width / AUTO_BASELINE_PX) * 100)));
 }
 
-/** Extra pill width reserved for the separate mic capsule (gap + capsule). */
-export const MIC_PILL_EXTRA = 170;
+/** Extra pill width reserved for the separate mic + cam capsules: 76 + 8 gap
+    + 68 + 10 padding on each side. The renderer mirrors this in MIC_EXTRA
+    (renderer.ts) so #island can give the strip back and the capsules get a
+    real 10 px gap from the island body. */
+export const MIC_PILL_EXTRA = 172;
 /** Extra pill width reserved for the notice/meeting banner overlay. */
 export const BANNER_EXTRA = 250;
 

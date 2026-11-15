@@ -1029,19 +1029,49 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .svc-bar > span:nth-child(2) { flex: 1; min-width: 90px; }
 .svc-bar .chip, .svc-bar .link { flex: none; }
 
-/* ---- Separate mic capsule (meeting) ----
-   Lives in #micPill, its own layer beside the island. The main process
-   reserves 86 logical px (10 gap + 76 capsule) in the pill window, so the
-   gap is real: the desktop shows through between the two capsules. */
-#micPill { background: transparent; border: none; box-shadow: none; }
-/* Two capsules side by side: mic mute + camera shortcut. */
-#micPill {
+/* ---- Separate mic capsules (meeting) ----
+   #micPill is a sibling of #island, not a child: the main process reserves
+   MIC_PILL_EXTRA logical px in the pill window and #island gives that strip
+   back (--mic-extra), so only the two buttons are painted there. The gap is
+   real: the desktop shows through between the island body and the capsules. */
+/* The layer fills the window but paints nothing, so it must not swallow the
+   pointer: only the two capsules are clickable. */
+#micPill { background: transparent; border: none; box-shadow: none; pointer-events: none; }
+#micPill .meeting-mic,
+#micPill .meeting-cam { pointer-events: auto; }
+/* The id selector used to carry display:flex, which beat the UA
+   [hidden] { display: none } rule and kept the layer alive when idle. The
+   display now only exists for the visible case. */
+#micPill:not([hidden]) {
   display: flex;
   align-items: center;
   gap: 8px;
   height: 100%;
-  padding: 0 8px;
+  padding: 0 10px;
+  /* The capsules hug the window edge that is NOT the island body, so the row
+     lands in the reserved strip instead of over the body. */
+  justify-content: flex-end;
 }
+/* Right-hand islands flip the window: the island body stays flush with the
+   screen edge and the capsules take the strip on its left, so the row order
+   mirrors too. */
+#island[data-pos="right"] + #micPill:not([hidden]),
+#island[data-pos="right-side"] + #micPill:not([hidden]) {
+  justify-content: flex-start;
+}
+/* While the capsules are out the island body gives the strip up, so no dark
+   or frosted rectangle is drawn behind them. --mic-extra is written by the
+   renderer already multiplied by the island scale: #island is NOT zoomed, so
+   a plain px inset would be wrong at any scale other than 100%. */
+#island[data-mic="joining"],
+#island[data-mic="on"] { right: var(--mic-extra, 172px); }
+#island[data-pos="right"][data-mic="joining"],
+#island[data-pos="right"][data-mic="on"],
+#island[data-pos="right-side"][data-mic="joining"],
+#island[data-pos="right-side"][data-mic="on"] { left: var(--mic-extra, 172px); right: 0; }
+/* Same reveal rule as the island body: a hidden-until-hover island must not
+   leave the capsules floating on their own. */
+#island[data-hidden="true"][data-hovered="false"]:not([data-state="open"]) + #micPill { opacity: 0; }
 .meeting-mic {
   display: flex;
   align-items: center;
@@ -1090,13 +1120,13 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* Joining look: label hidden, dot pulses orange, capsule pops in from the
    island side and settles. */
-#island[data-mic="joining"] .meeting-mic .mic-label { display: none; }
-#island[data-mic="joining"] .meeting-mic { width: 58px; padding: 0 12px; }
-#island[data-mic="joining"] .meeting-cam { opacity: 0; pointer-events: none; }
-#island[data-mic="joining"] .meeting-mic .mic-dot { background: #ff9f0a; animation: mic-pulse 1s ease-in-out infinite; }
+#island[data-mic="joining"] + #micPill .meeting-mic .mic-label { display: none; }
+#island[data-mic="joining"] + #micPill .meeting-mic { width: 58px; padding: 0 12px; }
+#island[data-mic="joining"] + #micPill .meeting-cam { opacity: 0; pointer-events: none; }
+#island[data-mic="joining"] + #micPill .meeting-mic .mic-dot { background: #ff9f0a; animation: mic-pulse 1s ease-in-out infinite; }
 #micPill:not([hidden]) { animation: mic-pop 320ms cubic-bezier(0.34, 1.56, 0.64, 1); }
-#island[data-pos="right"] #micPill:not([hidden]),
-#island[data-pos="right-side"] #micPill:not([hidden]) { animation-name: mic-pop-right; }
+#island[data-pos="right"] + #micPill:not([hidden]),
+#island[data-pos="right-side"] + #micPill:not([hidden]) { animation-name: mic-pop-right; }
 @keyframes mic-pop {
   from { opacity: 0; transform: translateX(14px) scale(0.5); }
   to { opacity: 1; transform: translateX(0) scale(1); }
@@ -1112,9 +1142,12 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* ---- Notice / meeting banner ----
    Overlays the whole pill window while the main process widens it. Meeting
-   tone is the green "Meeting mode" card; notice tone is neutral dark. */
+   tone is the green "Meeting mode" card; notice tone is neutral dark.
+   display only exists for the visible case: an id selector carrying
+   display:flex used to beat the UA [hidden] rule, so the card kept painting
+   its frosted rectangle (and the last message) even when hidden. */
 #island[data-banner="true"] #pill { opacity: 0; }
-#banner {
+#banner:not([hidden]) {
   display: flex;
   align-items: center;
   gap: 8px;

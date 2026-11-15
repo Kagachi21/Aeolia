@@ -118,9 +118,17 @@ pillLayer.addEventListener('click', (e) => {
   window.api.islandOpen();
 });
 
+/* Must match MIC_PILL_EXTRA in src/main/bounds.ts. The pill window reserves
+   this many logical px for the two meeting capsules, and #island gives the
+   same strip back so nothing is painted behind them. */
+const MIC_EXTRA = 172;
+
 function applyScale(): void {
   const zoom = Math.min(1.3, Math.max(0.75, (Number(root.dataset.scale) || 100) / 100));
-  for (const el of [pillLayer, miniLayer, micPillLayer, bannerLayer, openLayer]) {
+  // #island itself is never zoomed, so the reserved strip it gives up has to
+  // be scaled here while the zoomed layers keep working in logical px.
+  root.style.setProperty('--mic-extra', `${Math.round(MIC_EXTRA * zoom)}px`);
+  for (const el of [pillLayer, miniLayer, bannerLayer, openLayer]) {
     if (zoom === 1) {
       el.style.removeProperty('zoom');
       el.style.removeProperty('width');
@@ -134,6 +142,19 @@ function applyScale(): void {
       el.style.right = 'auto';
       el.style.bottom = 'auto';
     }
+  }
+  // The capsule layer is a sibling of #island, so its containing block is the
+  // window itself. The 100/zoom% trick above cancels the zoom of a layer that
+  // lives INSIDE the island; here it would leave the capsules short of the
+  // reserved strip, so the layer keeps a plain 100% of the window.
+  if (zoom === 1) {
+    micPillLayer.style.removeProperty('zoom');
+    micPillLayer.style.removeProperty('width');
+    micPillLayer.style.removeProperty('height');
+  } else {
+    micPillLayer.style.zoom = String(zoom);
+    micPillLayer.style.width = '100%';
+    micPillLayer.style.height = '100%';
   }
 }
 
