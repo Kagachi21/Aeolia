@@ -893,7 +893,6 @@ function renderPage(): void {
     add(section('Kucing'));
     add(row('Sapaan saat dibuka', 'Kucing senyum di tengah sebentar, lalu pindah ke kanan.', toggle('catGreeting')));
     add(row('Kembali ke tengah saat idle', 'Saat komputer tidak dipakai, kucing pindah ke tengah.', toggle('catIdleCenter')));
-    add(row('Notch kecil bisa dibuka', 'Saat notch menyusut jadi 14 px, kursor di atasnya tidak lagi membuka kartu, supaya tab di browser tetap bisa diklik.', toggle('miniOpensCard')));
   } else if (currentPage === 'Panels') {
     add(section('Visible tabs'));
     add(note('Pilih tab yang tampil di bilah kartu. Mengosongkan semua menyembunyikan seluruh tab panel; tombol grid dan Settings tetap tersedia di kartu.'));

@@ -21,7 +21,7 @@ const realState = JSON.parse(fs.readFileSync(path.join(userData, 'state.json'), 
 const seeded = Object.assign({}, realSettings, {
   pollIntervalMs: 300, openDelayMs: 600000, openDelayBusyMs: 600000,
   animationMs: 120, islandStyle: 'dynamic', edgeMargin: 4, monitor: 'main',
-  miniMode: 'clock', miniTrigger: 'fullscreen', miniOpensCard: false,
+  miniMode: 'clock', miniTrigger: 'fullscreen',
   hiddenUntilHover: false, captureShortcut: 'off',
   robotIdleOnly: false, robotBatteryExpressions: false,
   robotEyeMovement: 'relaxed', catIdleCenter: false,

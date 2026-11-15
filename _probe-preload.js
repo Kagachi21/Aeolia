@@ -31,7 +31,7 @@ let settings = Object.assign({
   robotEyeColor: '', robotAccessory: 'none', robotEyeMovement: 'relaxed',
   robotIdleOnly: false, robotIdleAfterMs: 30000, robotBatteryExpressions: true,
   robotHoldsItems: false, catGreeting: true, catIdleCenter: true,
-  miniMode: 'clock', miniTrigger: 'fullscreen', miniOpensCard: false,
+  miniMode: 'clock', miniTrigger: 'fullscreen',
   worshipMode: 'prayer', worshipRemind: true, worshipCountdown: true,
   worshipImsakIftar: false, worshipPauseMusic: false,
   worshipOther: [], adhanEnabled: false, adhanVolume: 70, adhanFajr: true,

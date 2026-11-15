@@ -92,13 +92,21 @@ export class Island {
   }
 
   setBase(next: BaseState): void {
-    if (this.base === next) return;
+    // A peeked island (state pill, base mini) must also shrink back when the
+    // poll re-asserts the same base, so the early return needs BOTH equal.
+    if (this.base === next && this.state === next) return;
     this.base = next;
     if (this.state !== 'open') this.transition(next);
   }
 
   open(): void {
     if (this.state !== 'open') this.transition('open');
+  }
+
+  /** Temporarily leave the notch while the cursor rests on it, so the island
+      is reachable again. base is untouched: close() returns to the notch. */
+  peek(): void {
+    if (this.state === 'mini') this.transition('pill');
   }
 
   close(): void {

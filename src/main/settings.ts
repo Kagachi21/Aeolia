@@ -36,7 +36,6 @@ export type Settings = {
   barOrder: string[];
   edgeMargin: number;
   hiddenUntilHover: boolean;
-  miniOpensCard: boolean;
   monitor: 'main' | 'cursor';
 
   pillLyrics: boolean;
@@ -126,7 +125,6 @@ const DEFAULTS: Settings = {
   barOrder: ['clock', 'cat', 'battery', 'media', 'mic'],
   edgeMargin: 4,
   hiddenUntilHover: false,
-  miniOpensCard: false,
   monitor: 'main',
 
   pillLyrics: false,
@@ -282,7 +280,7 @@ function merge(base: Settings, raw: Partial<Settings>): Settings {
     'notifyInternet', 'notifyResumeMusic', 'weatherEnabled', 'weatherRainAlert',
     'calendarCountdown', 'worshipRemind', 'worshipCountdown', 'worshipPauseMusic',
     'worshipImsakIftar', 'adhanEnabled', 'adhanFajr', 'captureShowIsland',
-    'captureMic', 'captureClipboard', 'miniOpensCard'] as const) {
+    'captureMic', 'captureClipboard'] as const) {
     if (typeof merged[k] !== 'boolean') merged[k] = base[k];
   }
   // Settings files written before islandScale existed carried meetingAuto:false

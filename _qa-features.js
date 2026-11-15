@@ -261,6 +261,37 @@ Module._load = function (request, parent, isMain) {
   const bannerOpen = boundsFor('open', freshSettings().loadSettings(), 200, undefined, undefined, 250);
   check('bannerExtra tidak mengubah kartu terbuka', bannerOpen.width === Math.round(360 * 1.3), bannerOpen.width);
 
+  /* --- Island.peek: hover pada notch mengembang tanpa kehilangan base --- */
+  {
+    write({ ...base, islandScale: 100, animationMs: 16, ...sizes });
+    const { Island } = require('./dist/main/island.js');
+    const st = freshSettings().loadSettings();
+    let cur = { x: 0, y: 0, width: -1, height: -1 };
+    const fakeWin = { getBounds: () => ({ ...cur }), setBounds: (b) => { cur = { ...b }; } };
+    const isl = new Island(fakeWin, st);
+    isl.place();
+    isl.setBase('mini');
+    await new Promise((r) => setTimeout(r, 90));
+    check('peek setup: island di notch 140x30', cur.width === 140 && cur.height === 30,
+      `${cur.width}x${cur.height}`);
+    if (typeof isl.peek === 'function') {
+      isl.peek();
+      await new Promise((r) => setTimeout(r, 90));
+      check('peek: notch mengembang ke pil 150x36 dan base tetap mini',
+        cur.width === 150 && cur.height === 36 && isl.baseState === 'mini',
+        `${cur.width}x${cur.height} base=${isl.baseState}`);
+      // Returning is the poller's job (pollActiveWindow -> setBase), close()
+      // only leaves the open card.
+      isl.setBase('mini');
+      await new Promise((r) => setTimeout(r, 90));
+      check('setBase setelah peek: kembali ke notch 140x30',
+        cur.width === 140 && cur.height === 30, `${cur.width}x${cur.height}`);
+    } else {
+      check('peek: notch mengembang ke pil 150x36 dan base tetap mini', false, 'Island.peek belum ada');
+      check('setBase setelah peek: kembali ke notch 140x30', false, 'Island.peek belum ada');
+    }
+  }
+
   /* --- call-context detection (extras.matchesCall) --- */
   /* The Module._load hook would serve the extras STUB here; drop the stub so
      the real compiled module (with matchesCall) is loaded instead. The later

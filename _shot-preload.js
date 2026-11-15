@@ -41,7 +41,7 @@ contextBridge.exposeInMainWorld('api', {
   openSettings() {}, pathForFile: () => '', openWindow() {}, setCardHeight() {},
   onSettingsChanged: (cb) => {
     setTimeout(() => cb({ accent: '#e9eef7', surface: 'Black', visibleTabs: [],
-      barOrder: ['clock', 'cat', 'battery', 'media', 'mic'], miniOpensCard: false,
+      barOrder: ['clock', 'cat', 'battery', 'media', 'mic'],
       islandStyle: 'notched', islandContent: 'clock-robot', catGreeting: false,
       worshipMode: 'prayer', worshipCountdown: true }), 20);
     return () => {};

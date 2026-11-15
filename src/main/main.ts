@@ -427,9 +427,10 @@ function pollHoverZone(): void {
   if (inside) {
     cancelLeave();
     if (settings.hiddenUntilHover) pushStatus();
-    // Hovering the mini notch opens the card over the browser's tab strip,
-    // so it stays opt-in via the "Notch kecil bisa dibuka" setting.
-    if (island.current !== 'mini' || settings.miniOpensCard) armHover();
+    // Hovering the small notch first expands it (peek) so the island is
+    // reachable again; the hover timer then opens the card as usual.
+    if (island.current === 'mini') island.peek();
+    armHover();
   } else {
     cancelHover();
     cancelLeave();

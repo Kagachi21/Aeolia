@@ -26,7 +26,7 @@ fs.writeFileSync(path.join(tmp, 'state.json'), JSON.stringify({
 fs.writeFileSync(path.join(tmp, 'settings.json'), JSON.stringify({
   islandStyle: 'dynamic', edgeMargin: 4, monitor: 'main', islandPosition: 'center',
   animationMs: 250, pollIntervalMs: 500, openDelayMs: 333, openDelayBusyMs: 444,
-  hoverIdleResetMs: 55, miniMode: 'clock', miniTrigger: 'fullscreen', miniOpensCard: false,
+  hoverIdleResetMs: 55, miniMode: 'clock', miniTrigger: 'fullscreen',
   hiddenUntilHover: false, cardWidth: 360, visibleTabs: ['web', 'clipboard'],
   robotIdleOnly: true, robotBatteryExpressions: true, robotEyeMovement: 'relaxed',
   catIdleCenter: true, robotIdleAfterMs: 30000,
@@ -361,7 +361,8 @@ async function main() {
   check('Bug2 applySettings() while open keeps click-through OFF', effectiveIgnore() === false);
   toggleCard();
 
-  /* Hover reveal / miniOpensCard gate (real pollHoverZone predicate).
+  /* Hover peek: hovering the small notch expands the island to the pill and
+     arms the card-open timer; leaving closes it back to the notch.
      Timers are dropped WITHOUT firing between cases, so a leftover logging or
      grace timer from a previous transition cannot masquerade as an armHover. */
   await invoke('settings:set', 'openDelayMs', 333);
@@ -375,11 +376,18 @@ async function main() {
     lastStatus()?.state === 'mini', `state=${lastStatus()?.state}`);
   dropTimers();
   outsideThenInside();
-  const armedWhenOff = pendingTimeouts();
-  check('Bug2 mini + miniOpensCard=OFF does not arm a card-opening hover timer',
-    !armedWhenOff.includes(444) && !armedWhenOff.includes(333)
-      && armedWhenOff.every((ms) => ms === 370 || ms === 55),
-    `state=${lastStatus()?.state} pending=${JSON.stringify(armedWhenOff)}`);
+  const armedNotch = pendingTimeouts();
+  // Under a fullscreen app busyForDelay is true, so the armed delay is the
+  // busy one (444), same as the old miniOpensCard=ON case expected.
+  check('Bug2 hover pada notch: island peek ke pill dan timer buka kartu terpasang',
+    lastStatus()?.state === 'pill' && armedNotch.includes(444),
+    `state=${lastStatus()?.state} pending=${JSON.stringify(armedNotch)}`);
+  fireTimeouts();
+  check('Bug2 firing the notch hover timer really opens the card',
+    lastStatus()?.state === 'open', JSON.stringify(lastStatus()));
+  toggleCard();                         // closing the card returns to base, the notch
+  check('Bug2 closing the card from a peek returns to the notch (base utuh)',
+    lastStatus()?.state === 'mini', `state=${lastStatus()?.state}`);
   setFullscreen(false);                 // pill
   dropTimers();
   outsideThenInside();
@@ -389,18 +397,7 @@ async function main() {
   fireTimeouts();
   toggleCard();                         // the pill hover timer opened the card; close it again
   setFullscreen(true);
-  await invoke('settings:set', 'miniOpensCard', true);
   dropTimers();
-  outsideThenInside();
-  const armedWhenOn = pendingTimeouts();
-  check('Bug2 mini + miniOpensCard=ON arms the hover-open timer',
-    armedWhenOn.includes(444), `state=${lastStatus()?.state} pending=${JSON.stringify(armedWhenOn)}`);
-  clearSent();
-  fireTimeouts(444);
-  check('Bug2 firing the mini hover timer really opens the card',
-    lastStatus()?.state === 'open', JSON.stringify(lastStatus()));
-  await invoke('settings:set', 'miniOpensCard', false);
-  await invoke('settings:set', 'hiddenUntilHover', true);
   hoverAt(100, 700);
   clearSent();
   hoverAt(b.x + 5, b.y + 2);

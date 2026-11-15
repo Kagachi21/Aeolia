@@ -52,7 +52,6 @@ declare global {
     catIdleCenter: boolean;
     miniMode: string;
     miniTrigger: string;
-    miniOpensCard: boolean;
     worshipMode: string;
     worshipRemind: boolean;
     worshipCountdown: boolean;
