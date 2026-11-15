@@ -61,12 +61,17 @@ input:disabled {
   overflow: hidden;
 }
 
-/* macOS-notch look: the mini window is 150x32 by default, so the painted
-   strip fills it with rounded bottom corners instead of a 14 px sliver. */
+/* macOS-notch look. The window itself is 39 px tall (Windows floors frameless
+   windows there), but only the top strip is painted: the rest stays transparent
+   and click-through, so browser tabs underneath keep working. --mini-h is 14 px
+   (the reference notch) and 26 px for the cat, and --island-scale keeps the
+   strip in step with the zoomed layers on a scaled display. */
 #island[data-state="mini"] {
-  height: 100%;
-  border-radius: 0 0 11px 11px;
+  height: calc(var(--mini-h, 14px) * var(--island-scale, 1));
+  border-radius: 0 0 calc(5px * var(--island-scale, 1)) calc(5px * var(--island-scale, 1));
 }
+
+#island[data-state="mini"][data-mini-mode="cat"] { --mini-h: 26px; }
 
 #island[data-state="pill"] {
   height: 100%;
@@ -313,7 +318,6 @@ input:disabled {
 /* Notched style attaches the pill to the top edge with square top corners. */
 #island[data-island-style="notched"][data-state="pill"],
 #island[data-island-style="notched"][data-state="open"] { border-radius: 0 0 14px 14px; }
-#island[data-island-style="notched"][data-state="mini"] { border-radius: 0 0 7px 7px; }
 #island[data-island-style="notched"] #open { border-radius: 0 0 14px 14px; }
 
 /* Island content: Clock + Battery swaps the cat for a live battery readout,

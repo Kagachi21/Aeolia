@@ -128,6 +128,8 @@ function applyScale(): void {
   // #island itself is never zoomed, so the reserved strip it gives up has to
   // be scaled here while the zoomed layers keep working in logical px.
   root.style.setProperty('--mic-extra', `${Math.round(MIC_EXTRA * zoom)}px`);
+  // The notch strip is painted by #island, so it needs the scale explicitly.
+  root.style.setProperty('--island-scale', String(zoom));
   for (const el of [pillLayer, miniLayer, bannerLayer, openLayer]) {
     if (zoom === 1) {
       el.style.removeProperty('zoom');

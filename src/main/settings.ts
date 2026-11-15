@@ -92,13 +92,22 @@ export type Settings = {
   captureVideoDir: string;
 };
 
+/** Notch sizes that earlier builds shipped as their default. A settings.json
+    still carrying one of them is migrated to DEFAULTS.mini, otherwise changing
+    the default would never reach a machine that already saved the old one. */
+const LEGACY_MINI: Size[] = [
+  { width: 64, height: 14 },
+  { width: 150, height: 32 },
+  { width: 112, height: 26 },
+];
+
 const DEFAULTS: Settings = {
   openDelayMs: 150,
   openDelayBusyMs: 400,
   animationMs: 250,
   pollIntervalMs: 500,
   hoverIdleResetMs: 60,
-  mini: { width: 112, height: 26 },
+  mini: { width: 64, height: 14 },
   pill: { width: 150, height: 36 },
   open: { width: 360, height: 92 },
 
@@ -220,10 +229,12 @@ function merge(base: Settings, raw: Partial<Settings>): Settings {
   merged.pill.height = base.pill.height;
   merged.pill.width = Math.min(180, Math.max(110, Number(merged.pill.width) || base.pill.width));
   // Sizes saved by earlier default builds migrate once; genuinely customized
-  // sizes are left alone. 64x14 was the sliver notch, 150x32 the oversized
-  // notch both replaced by the small 112x26 default.
-  if (raw.mini && ((raw.mini.width === 64 && raw.mini.height === 14)
-    || (raw.mini.width === 150 && raw.mini.height === 32))) merged.mini = { ...base.mini };
+  // sizes are left alone. Every entry here is a notch size that used to be a
+  // default, so a settings.json still carrying one of them snaps to the current
+  // reference notch instead of pinning the old geometry forever.
+  if (raw.mini && LEGACY_MINI.some((s) => s.width === raw.mini!.width && s.height === raw.mini!.height)) {
+    merged.mini = { ...base.mini };
+  }
   if (raw.pill && raw.pill.width === 138) merged.pill.width = base.pill.width;
   merged.cardWidth = Math.min(520, Math.max(320, Number(merged.cardWidth) || base.cardWidth));
   merged.hoverIdleResetMs = Math.min(600, Math.max(0, Number(merged.hoverIdleResetMs) || 0));

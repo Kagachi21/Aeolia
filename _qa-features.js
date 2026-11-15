@@ -156,23 +156,35 @@ Module._load = function (request, parent, isMain) {
   check('glassLevel non-angka kembali default 55', freshSettings().loadSettings().glassLevel === 55);
 
   /* --- small notch default sizes + old-default migration --- */
-  check('default mini notch kecil: 112x26 (tidak menutupi tab browser)',
-    gl.mini.width === 112 && gl.mini.height === 26, JSON.stringify(gl.mini));
+  /* Old expectation here was the 112x26 notch. The reference screenshot the
+     user measured is 64x14 with a 5 px bottom radius, so the default moved and
+     every old default (64x14 sliver, 150x32 oversized, 112x26 interim) now
+     migrates to it. A genuinely customized size is still left alone. */
+  check('default mini notch sesuai referensi: 64x14',
+    gl.mini.width === 64 && gl.mini.height === 14, JSON.stringify(gl.mini));
   check('default pill ikut Dynamic Island: 150x36', gl.pill.width === 150 && gl.pill.height === 36,
     JSON.stringify(gl.pill));
-  write({ mini: { width: 64, height: 14 }, pill: { width: 138, height: 28 } });
+  write({ mini: { width: 112, height: 26 }, pill: { width: 138, height: 28 } });
   const mig = freshSettings().loadSettings();
-  check('migrasi: mini default lama 64x14 -> 112x26', mig.mini.width === 112 && mig.mini.height === 26,
-    JSON.stringify(mig.mini));
+  check('migrasi: mini default lama 112x26 -> 64x14 (settings user ikut berubah)',
+    mig.mini.width === 64 && mig.mini.height === 14, JSON.stringify(mig.mini));
   write({ mini: { width: 150, height: 32 }, pill: { width: 138, height: 28 } });
   const migBig = freshSettings().loadSettings();
-  check('migrasi: mini default 150x32 (build batch B) -> 112x26',
-    migBig.mini.width === 112 && migBig.mini.height === 26, JSON.stringify(migBig.mini));
+  check('migrasi: mini default 150x32 (build batch B) -> 64x14',
+    migBig.mini.width === 64 && migBig.mini.height === 14, JSON.stringify(migBig.mini));
+  write({ mini: { width: 64, height: 14 }, pill: { width: 138, height: 28 } });
+  const migSliver = freshSettings().loadSettings();
+  check('migrasi: mini sliver 64x14 tetap 64x14 (kini default)',
+    migSliver.mini.width === 64 && migSliver.mini.height === 14, JSON.stringify(migSliver.mini));
   check('migrasi: pill default lama 138 -> 150', mig.pill.width === 150, JSON.stringify(mig.pill));
   write({ mini: { width: 200, height: 40 }, pill: { width: 160, height: 28 } });
   const kept = freshSettings().loadSettings();
   check('ukuran kustom tidak disentuh migrasi', kept.mini.width === 200 && kept.pill.width === 160,
     JSON.stringify({ m: kept.mini, p: kept.pill }));
+  write({ mini: { width: 80, height: 20 }, pill: { width: 160, height: 28 } });
+  const kept80 = freshSettings().loadSettings();
+  check('mini 80x20 bukan nilai legacy -> tidak direset ke default',
+    kept80.mini.width === 80 && kept80.mini.height === 20, JSON.stringify(kept80.mini));
 
   /* --- new boolean / enum defaults --- */
   write({});

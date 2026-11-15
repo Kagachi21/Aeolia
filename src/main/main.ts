@@ -65,6 +65,10 @@ let lastClip: string | null = null;
    keeps getSystemIdleTime() wobble around the threshold from sliding the cat
    between the centre and its rail. A change now needs seconds, not one tick. */
 const ROBOT_TICK_MS = 200;
+/** Painted height of the cat notch, in logical px. Mirrors --mini-h in
+    styles.css (clock and clock-date notches use settings.mini.height, which is
+    the same 14 px the CSS falls back to). */
+const MINI_CAT_H = 26;
 const IDLE_STABLE_TICKS = 15;
 const ACTIVE_STABLE_TICKS = 8;
 let idleStable = false;
@@ -429,7 +433,14 @@ function pollHoverZone(): void {
   const p = screen.getCursorScreenPoint();
   const pad = 6;
   const withinX = p.x >= b.x - pad && p.x <= b.x + b.width + pad;
-  const overWindow = p.y >= b.y && p.y <= b.y + b.height;
+  // The notch paints only its top strip: Windows floors the frameless window at
+  // 39 px, so the transparent remainder must not count as "on the island" or a
+  // cursor 25 px below the notch would trigger a peek out of nowhere.
+  const paintedH = island.current === 'mini'
+    ? Math.min(b.height, Math.round(
+      (settings.miniMode === 'cat' ? MINI_CAT_H : settings.mini.height) * effectiveScalePct(settings) / 100))
+    : b.height;
+  const overWindow = p.y >= b.y && p.y <= b.y + paintedH;
   // The gap only exists when the window is pushed below the screen edge.
   const gapTop = Math.min(b.y, display.y);
   const inGap = p.y >= gapTop && p.y < b.y;
