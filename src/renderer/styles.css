@@ -157,6 +157,15 @@ input:disabled {
     linear-gradient(165deg, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0.06) 28%, rgba(255, 255, 255, 0.015) 55%, rgba(255, 255, 255, 0.05) 100%),
     linear-gradient(0deg, rgba(20, 28, 24, calc(0.90 + 0.07 * var(--glass-a, 0.55))) 0%, rgba(28, 40, 34, calc(0.87 + 0.07 * var(--glass-a, 0.55))) 100%);
 }
+/* On the tall OPEN card the white sheen must not stretch with content: a long
+   notice list used to push the bright band down under the hint text, dropping
+   it to 4.22:1. Pin the bevel to px so the body below 56px stays a stable dark.
+   The pill keeps the percentage sheen above and its approved look unchanged. */
+#island[data-surface="Liquid glass"][data-state="open"] {
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.22) 0px, rgba(255, 255, 255, 0.06) 22px, rgba(255, 255, 255, 0.015) 56px, rgba(255, 255, 255, 0.015) 100%),
+    linear-gradient(0deg, rgba(20, 28, 24, calc(0.90 + 0.07 * var(--glass-a, 0.55))) 0%, rgba(28, 40, 34, calc(0.87 + 0.07 * var(--glass-a, 0.55))) 100%);
+}
 /* Translucent: the light frosted sibling. Text stays dark-on-light, so the
    tab and row tints flip to dark ink on a milky pane. */
 #island[data-surface="Translucent"] {
@@ -1389,26 +1398,38 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
     linear-gradient(150deg, color-mix(in srgb, var(--accent) 20%, transparent), transparent 65%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
 }
-/* Real cover colours. Every glow is mixed into the same near black base
-   (never drawn as a bright translucent wash over the glass), so the panel
-   stays dark and the text ratios measured for the glass surface survive.
-   Without --mc-N (lookup failed) data-dynamic is false and the hash fallback
-   above is used instead. */
-/* The #island prefix is required: the Liquid glass and Translucent surfaces
-   also set .music-card's background with an id selector. Translucent keeps its
-   light pane, so the dark cover glow only applies to the other surfaces. */
-#island:not([data-surface="Translucent"]) .music-card[data-bg="album"][data-dynamic="true"] {
+/* Cover colours, real or fallback. The palette itself is forced dark and
+   saturated in musicColors.ts (HSL lightness 0.22..0.32, saturation >= 0.55),
+   so a strong mix here stays dark enough for AA text while the card finally
+   reads as the album instead of a neutral panel. The #island prefix is
+   required: the Liquid glass and Translucent surfaces also set .music-card's
+   background with an id selector. Translucent keeps its light pane. */
+#island:not([data-surface="Translucent"]) .music-card[data-bg="album"][data-dynamic="true"],
+#island:not([data-surface="Translucent"]) .music-card[data-bg="album"][data-dynamic="fallback"] {
   background:
-    radial-gradient(125% 115% at 6% -15%,
-      color-mix(in srgb, var(--mc-2, #6ea8ff) 55%, #0e1117), transparent 72%),
-    radial-gradient(115% 115% at 98% 115%,
-      color-mix(in srgb, var(--mc-1, #6ea8ff) 52%, #0e1117), transparent 74%),
-    linear-gradient(180deg,
-      color-mix(in srgb, var(--mc-3, #6ea8ff) 20%, #10141a) 0%, #0e1117 100%);
+    radial-gradient(130% 130% at 6% -10%,
+      color-mix(in srgb, var(--mc-1, #8a3b2a) 92%, transparent), transparent 68%),
+    radial-gradient(120% 140% at 96% 110%,
+      color-mix(in srgb, var(--mc-2, #6b2350) 88%, transparent), transparent 70%),
+    linear-gradient(150deg,
+      color-mix(in srgb, var(--mc-1, #8a3b2a) 88%, #0b0d12),
+      color-mix(in srgb, var(--mc-3, #241436) 90%, #0b0d12) 78%,
+      #0b0d12 100%);
+  box-shadow: 0 10px 34px color-mix(in srgb, var(--mc-1, #8a3b2a) 28%, transparent);
 }
-#island:not([data-surface="Translucent"]) .music-card[data-bg="album"][data-dynamic="true"] .music-art {
+#island:not([data-surface="Translucent"]) .music-card[data-bg="album"][data-dynamic="true"] .music-art,
+#island:not([data-surface="Translucent"]) .music-card[data-bg="album"][data-dynamic="fallback"] .music-art {
   background: linear-gradient(160deg,
-    var(--mc-1, #6ea8ff), var(--mc-2, #6ea8ff) 70%, var(--mc-3, #6ea8ff));
+    var(--mc-1, #8a3b2a), var(--mc-2, #6b2350) 70%, var(--mc-3, #241436));
+}
+/* Local scrim only behind the two text rows, so the coloured glow stays
+   visible everywhere else on the card. */
+#island:not([data-surface="Translucent"]) .music-card[data-dynamic="true"] .music-now,
+#island:not([data-surface="Translucent"]) .music-card[data-dynamic="fallback"] .music-now,
+#island:not([data-surface="Translucent"]) .music-card[data-dynamic="true"] .music-times,
+#island:not([data-surface="Translucent"]) .music-card[data-dynamic="fallback"] .music-times {
+  background: linear-gradient(90deg, rgba(6, 8, 12, 0.28), rgba(6, 8, 12, 0));
+  border-radius: 8px;
 }
 .music-now { display: flex; align-items: center; gap: 8px; }
 /* Album-style art: a big gradient square with a pinned note badge. The
