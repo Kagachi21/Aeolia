@@ -59,6 +59,15 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('lyrics:auto-loaded', handler);
     return () => ipcRenderer.removeListener('lyrics:auto-loaded', handler);
   },
+  onMusicColors: (cb: (p: {
+    title: string; colors: { c1: string; c2: string; c3: string } | null;
+  }) => void): (() => void) => {
+    const handler = (_event: unknown, p: {
+      title: string; colors: { c1: string; c2: string; c3: string } | null;
+    }) => cb(p);
+    ipcRenderer.on('music:colors', handler);
+    return () => ipcRenderer.removeListener('music:colors', handler);
+  },
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSetting: (key: string, value: unknown) => ipcRenderer.invoke('settings:set', key, value),
   clipboardCopy: (text: string) => ipcRenderer.invoke('clip:copy', text),

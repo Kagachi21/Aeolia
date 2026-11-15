@@ -165,6 +165,9 @@ declare global {
       getExtras(): Promise<ExtrasState>;
       onExtras(cb: (s: ExtrasState) => void): () => void;
       onLyricsAuto(cb: (p: { title: string; lrc: string | null }) => void): () => void;
+      onMusicColors(cb: (p: {
+        title: string; colors: { c1: string; c2: string; c3: string } | null;
+      }) => void): () => void;
       dismissResume(): void;
       pauseMedia(): void;
       playMedia(): void;

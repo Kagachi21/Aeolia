@@ -1389,6 +1389,27 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
     linear-gradient(150deg, color-mix(in srgb, var(--accent) 20%, transparent), transparent 65%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
 }
+/* Real cover colours. Every glow is mixed into the same near black base
+   (never drawn as a bright translucent wash over the glass), so the panel
+   stays dark and the text ratios measured for the glass surface survive.
+   Without --mc-N (lookup failed) data-dynamic is false and the hash fallback
+   above is used instead. */
+/* The #island prefix is required: the Liquid glass and Translucent surfaces
+   also set .music-card's background with an id selector. Translucent keeps its
+   light pane, so the dark cover glow only applies to the other surfaces. */
+#island:not([data-surface="Translucent"]) .music-card[data-bg="album"][data-dynamic="true"] {
+  background:
+    radial-gradient(125% 115% at 6% -15%,
+      color-mix(in srgb, var(--mc-2, #6ea8ff) 55%, #0e1117), transparent 72%),
+    radial-gradient(115% 115% at 98% 115%,
+      color-mix(in srgb, var(--mc-1, #6ea8ff) 52%, #0e1117), transparent 74%),
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--mc-3, #6ea8ff) 20%, #10141a) 0%, #0e1117 100%);
+}
+#island:not([data-surface="Translucent"]) .music-card[data-bg="album"][data-dynamic="true"] .music-art {
+  background: linear-gradient(160deg,
+    var(--mc-1, #6ea8ff), var(--mc-2, #6ea8ff) 70%, var(--mc-3, #6ea8ff));
+}
 .music-now { display: flex; align-items: center; gap: 8px; }
 /* Album-style art: a big gradient square with a pinned note badge. The
    gradient comes from artGradientClass (g0..g5) so one song keeps one look. */

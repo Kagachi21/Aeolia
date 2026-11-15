@@ -666,6 +666,46 @@ async function rendererProbe() {
   check('card musik: waktu kanan format sisa, transport sejajar judul, volume di baris sendiri',
     /^-0:0[2-4]$/.test(mcard.end) && mcard.transportInRow && mcard.volRow, JSON.stringify(mcard));
 
+  /* ---- regresi latar kartu musik dinamis + fallback ---- */
+  const bgState = `(() => { const c = document.getElementById('musicCard');
+    return { dynamic: c.dataset.dynamic, vars: ['--mc-1', '--mc-2', '--mc-3'].map((v) => c.style.getPropertyValue(v)),
+      bg: getComputedStyle(c).backgroundImage, art: getComputedStyle(document.getElementById('musicArt')).backgroundImage }; })()`;
+  const bg0 = await js(win, bgState);
+  check('Regresi musicbg: awal data-dynamic false, tanpa --mc-N',
+    bg0.dynamic === 'false' && bg0.vars.every((v) => v === ''), JSON.stringify(bg0.dynamic));
+  const track = 'Kavi Rao - Neon Harbor';
+  const pal = { c1: '#c8412f', c2: '#7b3fa8', c3: '#242a4a' };
+  await js(win, `window.probe.emit('musicColors', ${JSON.stringify({ title: track, colors: pal })}); true`);
+  await sleep(180);
+  const bgOn = await js(win, bgState);
+  check('Regresi musicbg: palet lewat IPC mengisi CSSOM dan mengubah background',
+    bgOn.dynamic === 'true' && bgOn.vars.join('|') === `${pal.c1}|${pal.c2}|${pal.c3}`
+      && bgOn.bg !== bg0.bg && bgOn.art !== bg0.art,
+    JSON.stringify(bgOn.vars));
+  await js(win, `window.probe.emit('musicColors', ${JSON.stringify({ title: track, colors: null })}); true`);
+  await sleep(180);
+  const bgOff = await js(win, bgState);
+  check('Regresi musicbg: lookup gagal kembali ke fallback hash, variabel dihapus',
+    bgOff.dynamic === 'false' && bgOff.vars.every((v) => v === '')
+      && bgOff.bg === bg0.bg && bgOff.art === bg0.art, JSON.stringify(bgOff.vars));
+  await js(win, `window.probe.emit('musicColors', ${JSON.stringify({ title: 'Lagu Lain - Judul', colors: pal })}); true`);
+  await sleep(150);
+  const bgStale = await js(win, bgState);
+  check('Regresi musicbg: balasan untuk lagu lain diabaikan',
+    bgStale.dynamic === 'false' && bgStale.vars.every((v) => v === ''), JSON.stringify(bgStale.vars));
+  await js(win, `window.probe.emit('status', { musicCardBackground: 'plain' }); true`);
+  await js(win, `window.probe.emit('settings', { musicCardBackground: 'plain' }); true`);
+  await sleep(180);
+  await js(win, `window.probe.emit('musicColors', ${JSON.stringify({ title: track, colors: pal })}); true`);
+  await sleep(180);
+  const bgPlain = await js(win, bgState);
+  check('Regresi musicbg: setting plain tidak berubah sama sekali',
+    bgPlain.dynamic === 'false' && bgPlain.vars.every((v) => v === '') && bgPlain.bg === bg0.bg,
+    JSON.stringify({ dynamic: bgPlain.dynamic, vars: bgPlain.vars }));
+  await js(win, `window.probe.emit('status', { musicCardBackground: 'album' }); true`);
+  await js(win, `window.probe.emit('settings', { musicCardBackground: 'album' }); true`);
+  await sleep(150);
+
   await js(win, `window.probe.emit('settings', { barOrder: ['cat', 'clock', 'battery', 'media', 'mic'] }); true`);
   await sleep(120);
   const bar = await js(win, `(() => ({ clockRank: document.getElementById('clock').dataset.barRank,

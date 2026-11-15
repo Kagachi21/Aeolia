@@ -1173,6 +1173,35 @@ const musicPlayBtn = document.getElementById('musicPlay') as HTMLButtonElement;
 const musicVolSlider = document.getElementById('musicVol') as HTMLInputElement;
 const musicArt = document.getElementById('musicArt') as HTMLElement;
 
+/* Cover palette: only three hex strings cross the IPC boundary. A reply that
+   lands after the user skipped to the next song is dropped by title, and the
+   colours are cleared as soon as the title changes, so one song's glow never
+   paints over the next one while its lookup is still in flight. */
+type CardColors = { c1: string; c2: string; c3: string } | null;
+const MC_VARS = ['--mc-1', '--mc-2', '--mc-3'] as const;
+let lastPaintedTitle: string | null = null;
+
+function clearTrackColors(): void {
+  for (const name of MC_VARS) musicCard.style.removeProperty(name);
+  musicCard.dataset.dynamic = 'false';
+}
+
+function applyTrackColors(colors: CardColors): void {
+  if (!colors || root.dataset.musicBg !== 'album' || root.dataset.media !== 'true') {
+    clearTrackColors();
+    return;
+  }
+  musicCard.style.setProperty('--mc-1', colors.c1);
+  musicCard.style.setProperty('--mc-2', colors.c2);
+  musicCard.style.setProperty('--mc-3', colors.c3);
+  musicCard.dataset.dynamic = 'true';
+}
+
+window.api.onMusicColors((p) => {
+  if (p.title !== (mediaTrack.dataset.title ?? '')) return;
+  applyTrackColors(p.colors);
+});
+
 document.getElementById('musicPrev')?.addEventListener('click', () => window.api.prevMedia());
 document.getElementById('musicNext')?.addEventListener('click', () => window.api.nextMedia());
 musicPlayBtn.addEventListener('click', () => {
@@ -1202,6 +1231,12 @@ function artGradientClass(title: string): string {
 function paintMusic(): void {
   const playing = root.dataset.media === 'true';
   const raw = mediaTrack.dataset.title ?? '';
+  // A new song (or a stopped player) must not inherit the previous cover's
+  // glow: wait for this title's own lookup before switching the gradient on.
+  if (lastPaintedTitle !== raw || !playing || root.dataset.musicBg !== 'album') {
+    clearTrackColors();
+    lastPaintedTitle = raw;
+  }
   // "Artist - Song" splits like the reference card; a bare title keeps the
   // generic source line so nothing is invented.
   const sep = raw.indexOf(' - ');

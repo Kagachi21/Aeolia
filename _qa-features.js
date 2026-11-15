@@ -586,6 +586,57 @@ Module._load = function (request, parent, isMain) {
     JSON.stringify(openUpdate && { state: openUpdate.payload.state, openAction: openUpdate.payload.openAction }));
   electronMock.screen.getCursorScreenPoint = restoreCursor;
 
+  /* --- warna sampul lagu (helper murni musicColors) --- */
+  const mc = require('./dist/main/musicColors.js');
+  mc.clearColorCache();
+  const bgra = Buffer.alloc(36 * 4);
+  const put = (i, r, g, b) => {
+    const o = i * 4;
+    bgra[o] = b; bgra[o + 1] = g; bgra[o + 2] = r; bgra[o + 3] = 255;
+  };
+  for (let i = 0; i < 12; i += 1) put(i, 200, 60, 40);
+  for (let i = 12; i < 24; i += 1) put(i, 40, 180, 70);
+  for (let i = 24; i < 34; i += 1) put(i, 50, 80, 210);
+  put(34, 10, 10, 10);
+  put(35, 250, 250, 250);
+  const pal = mc.dominantColors(bgra, 6, 6);
+  check('musicColors: kuantisasi 5 bit per kanal stabil',
+    mc.quantizeKey(200, 60, 40) === '25,7,5' && mc.quantizeKey(203, 63, 43) === '25,7,5',
+    `${mc.quantizeKey(200, 60, 40)} / ${mc.quantizeKey(203, 63, 43)}`);
+  check('musicColors: 3 warna dominan berbeda, hex valid',
+    Boolean(pal) && ['c1', 'c2', 'c3'].every((k) => /^#[0-9a-f]{6}$/i.test(pal[k]))
+      && new Set([pal.c1, pal.c2, pal.c3]).size === 3, JSON.stringify(pal));
+  const flat = Buffer.alloc(12 * 4);
+  for (let i = 0; i < 12; i += 1) {
+    const o = i * 4;
+    flat[o] = 5; flat[o + 1] = 5; flat[o + 2] = 5; flat[o + 3] = 255;
+  }
+  check('musicColors: bitmap near-hitam saja -> null (fallback hash)',
+    mc.dominantColors(flat, 4, 3) === null && mc.dominantColors(Buffer.alloc(0), 4, 3) === null);
+  check('musicColors: thumbnail 100x100 dinaikkan ke 300x300',
+    mc.upgradeArtwork('https://is1-ssl.mzstatic.com/image/thumb/abc/100x100bb.jpg')
+      === 'https://is1-ssl.mzstatic.com/image/thumb/abc/300x300bb.jpg',
+    mc.upgradeArtwork('https://is1-ssl.mzstatic.com/image/thumb/abc/100x100bb.jpg'));
+  const rows = { results: [
+    { trackName: 'Other Song', artworkUrl100: 'https://x/other/100x100bb.jpg' },
+    { trackName: 'Bad Guy', artworkUrl100: 'https://x/bad/100x100bb.jpg' },
+  ] };
+  check('musicColors: hasil dengan trackName cocok diprioritaskan',
+    mc.pickArtworkUrl(rows, 'bad guy') === 'https://x/bad/100x100bb.jpg',
+    String(mc.pickArtworkUrl(rows, 'bad guy')));
+  check('musicColors: tanpa artwork -> null',
+    mc.pickArtworkUrl({ results: [{ trackName: 'Bad Guy' }] }, 'bad guy') === null);
+  check('musicColors: cacheKey memisah Artist - Song',
+    mc.cacheKey('Billie Eilish - bad guy') === 'billie eilish::bad guy',
+    mc.cacheKey('Billie Eilish - bad guy'));
+  mc.clearColorCache();
+  const offline1 = await mc.fetchTrackColors('Offline Artist - No Network');
+  const sizeAfter = mc.colorCacheSize();
+  const offline2 = await mc.fetchTrackColors('Offline Artist - No Network');
+  check('musicColors: offline -> null tanpa throw, hasil null di-cache',
+    offline1 === null && offline2 === null && mc.colorCacheSize() === sizeAfter && sizeAfter === 1,
+    JSON.stringify({ offline1, sizeAfter, now: mc.colorCacheSize() }));
+
   const failed = results.filter((r) => !r.ok);
   console.log(`\nQA_FEATURES ${results.length - failed.length}/${results.length} PASS`);
   if (failed.length) { console.log('FAILED:', failed.map((f) => f.name)); process.exitCode = 1; }

@@ -12,6 +12,7 @@ import { readPower } from './power';
 import { mediaNext, mediaPlayPause, mediaPrev } from './keys';
 import { sendShortcut } from './keys';
 import { fetchLyrics } from './lyrics';
+import { fetchTrackColors } from './musicColors';
 import { getMicMuted, toggleMicMute } from './micMute';
 import { camDecision } from './camToggle';
 import { brightnessRange, pasteShortcut, setBrightness, toggleMute, volumeStep } from './systemControl';
@@ -251,9 +252,16 @@ function pollMedia(): void {
     pushStatus();
     // A brand-new playing track pulls its synced lyrics once and pushes them.
     if (mediaPlaying && titleChanged && mediaTitle) {
-      void fetchLyrics(mediaTitle).then((lrc) => {
+      const title = mediaTitle;
+      void fetchLyrics(title).then((lrc) => {
         win?.webContents.send('lyrics:auto-loaded', { title: mediaTitle, lrc });
       });
+      // Only the album background needs cover colours; "Polos" stays as it is.
+      if (loadSettings().musicCardBackground === 'album') {
+        void fetchTrackColors(title).then((colors) => {
+          win?.webContents.send('music:colors', { title, colors });
+        });
+      }
     }
   }
 }
