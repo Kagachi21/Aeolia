@@ -120,10 +120,22 @@ function dominantColour(img, insetX, insetY) {
 
 const hex = (c) => `#${[c.r, c.g, c.b].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
 const parseRgb = (css) => {
-  const m = /rgba?\(([^)]+)\)/.exec(String(css || ''));
-  if (!m) return null;
-  const p = m[1].split(',').map((v) => Number(v.trim()));
-  return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 };
+  const s = String(css || '');
+  const m = /rgba?\(([^)]+)\)/.exec(s);
+  if (m) {
+    const p = m[1].split(',').map((v) => Number(v.trim()));
+    return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 };
+  }
+  /* color-mix() resolves to color(srgb r g b) with 0..1 channels. */
+  const c = /color\(srgb\s+([^)]+)\)/.exec(s);
+  if (c) {
+    const p = c[1].trim().split(/[\s/]+/).map((v) => Number(v));
+    return {
+      r: Math.round(p[0] * 255), g: Math.round(p[1] * 255), b: Math.round(p[2] * 255),
+      a: p.length > 3 ? p[3] : 1,
+    };
+  }
+  return null;
 };
 const lum = (c) => {
   const f = (v) => {
@@ -146,6 +158,72 @@ function contrast(textCss, surface) {
   const hi = Math.max(l1, l2);
   const lo = Math.min(l1, l2);
   return +((hi + 0.05) / (lo + 0.05)).toFixed(2);
+}
+
+/** WCAG ratio between two rgb objects. */
+function contrastRgb(a, b) {
+  const l1 = lum(a);
+  const l2 = lum(b);
+  return +((Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05)).toFixed(2);
+}
+
+const medianOf = (values) => {
+  if (!values.length) return 0;
+  const s = values.slice().sort((x, y) => x - y);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2);
+};
+
+/** Rendered contrast of a text node: the surface is the median of a ring of
+    pixels around the glyph box (the sheen makes the plane under a glyph lighter
+    than the card average), the ink is the median of the glyph pixels actually
+    painted. A CSS only contrast is optimistic, this is what the screen shows. */
+function textPixelContrast(img, rect, scale, textCss) {
+  const size = img.getSize();
+  const bmp = img.toBitmap();
+  const x0 = Math.round(rect.x * scale);
+  const y0 = Math.round(rect.y * scale);
+  const x1 = Math.round((rect.x + rect.w) * scale);
+  const y1 = Math.round((rect.y + rect.h) * scale);
+  const ring = { r: [], g: [], b: [] };
+  const glyph = [];
+  for (let y = y0 - 5; y <= y1 + 5; y += 1) {
+    for (let x = x0 - 5; x <= x1 + 5; x += 1) {
+      if (y < 0 || x < 0 || y >= size.height || x >= size.width) continue;
+      const i = (y * size.width + x) * 4;
+      const p = { r: bmp[i + 2], g: bmp[i + 1], b: bmp[i], a: bmp[i + 3] };
+      if (p.a < 200) continue;
+      const inside = y >= y0 && y < y1 && x >= x0 && x < x1;
+      if (inside) glyph.push(p);
+      else { ring.r.push(p.r); ring.g.push(p.g); ring.b.push(p.b); }
+    }
+  }
+  const surface = { r: medianOf(ring.r), g: medianOf(ring.g), b: medianOf(ring.b) };
+  /* Brightest end of the ring: the sheen band above the pill makes part of the
+     ring lighter than the median, and that is the worst pixel a glyph edge sits
+     on. 95th percentile instead of max so one stray anti alias pixel cannot
+     decide the verdict. */
+  const ringPixels = ring.r.map((r, i) => ({ r, g: ring.g[i], b: ring.b[i] }));
+  ringPixels.sort((p, q) => lum(p) - lum(q));
+  const surfaceP95 = ringPixels.length
+    ? ringPixels[Math.min(ringPixels.length - 1, Math.floor(ringPixels.length * 0.95))] : surface;
+  /* Only pixels that clearly differ from the plane are ink; the rest is the
+     background showing between glyph strokes. */
+  const far = (p) => Math.abs(p.r - surface.r) + Math.abs(p.g - surface.g)
+    + Math.abs(p.b - surface.b) > 90;
+  const inkPixels = glyph.filter(far);
+  const ink = inkPixels.length
+    ? { r: medianOf(inkPixels.map((p) => p.r)), g: medianOf(inkPixels.map((p) => p.g)),
+      b: medianOf(inkPixels.map((p) => p.b)) }
+    : null;
+  return {
+    surface, surfaceP95, ink, inkCount: inkPixels.length, boxPixels: glyph.length,
+    ratio: ink ? contrastRgb(ink, surface) : null,
+    /* Same ruler QA used on the reference: the declared ink colour over the ring
+       median. The glyph median above is the harsher variant, kept as a check. */
+    ratioCss: textCss ? contrast(textCss, surface) : null,
+    ratioWorst: textCss ? contrast(textCss, surfaceP95) : null,
+  };
 }
 
 /** Near black scan: the same rule the reference screenshot was measured with. */
@@ -176,6 +254,31 @@ function nearBlackBox(img) {
     }
     return n;
   };
+  /* Per row inset, so the bottom curve can be compared with the reference
+     screenshot row by row. The span (first/last dark pixel) is used instead of a
+     pixel count, because the clock glyphs punch holes in the middle rows, and
+     the alpha weighted coverage gives a sub pixel edge on the last rows. */
+  const rows = [];
+  for (let y = y0; y <= y1; y += 1) {
+    let left = -1;
+    let right = -1;
+    let cov = 0;
+    for (let x = x0; x <= x1; x += 1) {
+      const i = (y * size.width + x) * 4;
+      const a = bmp[i + 3];
+      if (a >= 16 && bmp[i] <= 40 && bmp[i + 1] <= 40 && bmp[i + 2] <= 40) {
+        if (left < 0) left = x;
+        right = x;
+      }
+      if (bmp[i] <= 60 && bmp[i + 1] <= 60 && bmp[i + 2] <= 60) cov += a / 255;
+    }
+    rows.push({
+      y: y - y0,
+      span: left < 0 ? 0 : right - left + 1,
+      inset: left < 0 ? null : +(((left - x0) + (x1 - right)) / 2).toFixed(2),
+      coverageInset: +(((x1 - x0 + 1) - cov) / 2).toFixed(2),
+    });
+  }
   return {
     x0, x1, y0, y1,
     width: x1 - x0 + 1, height: y1 - y0 + 1,
@@ -186,6 +289,7 @@ function nearBlackBox(img) {
     midRowWidth: rowWidth(Math.round((y0 + y1) / 2), 200),
     bottomRowWidth: rowWidth(y1, 40),
     bottomInset: +(((x1 - x0 + 1) - rowWidth(y1, 40)) / 2).toFixed(1),
+    rows,
   };
 }
 
@@ -219,6 +323,17 @@ const COLOURS = `(() => {
     hint: col(hint),
     row: col(row),
     parts,
+    rects: (() => {
+      const box = (el) => {
+        if (!el) return null;
+        const b = el.getBoundingClientRect();
+        return { x: b.x, y: b.y, w: b.width, h: b.height };
+      };
+      return {
+        clock: box(document.getElementById('clock')),
+        lyricActive: box(document.querySelector('.lyric-line.active')),
+      };
+    })(),
     accent: getComputedStyle(island).getPropertyValue('--accent').trim(),
     glassA: getComputedStyle(island).getPropertyValue('--glass-a').trim(),
     stripHeight: getComputedStyle(island).height,
@@ -289,6 +404,24 @@ async function main() {
         const pillShot = await win.capturePage();
         const pillOver = compositeOver(pillShot, kind);
         const pillMean = dominantColour(pillOver, 18, 9);
+        const pillColours = await js(COLOURS);
+        const pillScale = pillShot.getSize().width / (await js('window.innerWidth'));
+        const clockPixels = pillColours.rects.clock
+          ? textPixelContrast(pillOver, pillColours.rects.clock, pillScale, pillColours.clock) : null;
+
+        /* The media pill dims the clock to #b6bdcc, so it needs its own read:
+           that is the combination QA flagged at 5.38 median / 4.44 worst. */
+        await status({ ...base, state: 'pill', surface, glassLevel: level, media: true, mediaTitle: TRACK });
+        await sleep(280);
+        const mediaShot = await win.capturePage();
+        const mediaOver = compositeOver(mediaShot, kind);
+        const mediaColours = await js(COLOURS);
+        const clockMediaPixels = mediaColours.rects.clock
+          ? textPixelContrast(mediaOver, mediaColours.rects.clock, pillScale, mediaColours.clock) : null;
+        if (level === USER.glassLevel) {
+          fs.writeFileSync(path.join(SHOT_DIR, `glass-fix-${tag}pill-media-${kind}-4x.png`),
+            mediaOver.resize({ width: mediaOver.getSize().width * 4, quality: 'best' }).toPNG());
+        }
         if (level === USER.glassLevel) {
           fs.writeFileSync(path.join(SHOT_DIR, `glass-fixed-${tag}${kind}.png`), pillOver.toPNG());
           fs.writeFileSync(path.join(SHOT_DIR, `glass-fix-${tag}pill-${kind}-4x.png`),
@@ -323,6 +456,10 @@ async function main() {
             cardOver.resize({ width: cardOver.getSize().width * 4, quality: 'best' }).toPNG());
         }
         const colours = await js(COLOURS);
+        const cardScale = cardShot.getSize().width / (await js('window.innerWidth'));
+        const lyricPixels = colours.rects.lyricActive
+          ? textPixelContrast(cardOver, colours.rects.lyricActive, cardScale,
+            colours.parts.lyricActive) : null;
 
         const rows = {};
         for (const [part, css] of Object.entries(colours.parts)) {
@@ -334,10 +471,14 @@ async function main() {
           pillMean: hex(pillMean), pillRgb: pillMean,
           cardMean: hex(cardMean), cardRgb: cardMean,
           clock: { colour: colours.clock, ratio: contrast(colours.clock, pillMean) },
+          clockPixels,
+          clockMediaPixels,
+          lyricPixels,
           cardParts: rows,
         };
         console.log(`  ${surface.padEnd(12)} a=${colours.glassA.padEnd(4)} ${kind.padEnd(5)}`
           + ` pill ${hex(pillMean)} card ${hex(cardMean)} clock ${report.glass[key][lk][kind].clock.ratio}`
+          + ` clockPx ${clockPixels ? clockPixels.ratioCss : '-'}/${clockPixels ? clockPixels.ratioWorst : '-'}` + ` mediaClockPx ${clockMediaPixels ? clockMediaPixels.ratioCss : '-'}/${clockMediaPixels ? clockMediaPixels.ratioWorst : '-'}` + ` lyricPx ${lyricPixels ? lyricPixels.ratioWorst : '-'}/${lyricPixels ? lyricPixels.ratioCss : '-'}`
           + ` min-part ${Math.min(...Object.values(rows).map((r) => r.ratio))}`);
       }
     }
@@ -391,6 +532,31 @@ async function main() {
   console.log(`  Translucent (tidak diubah) di bawah 4.5:1: ${failures.filter((f) => f.startsWith('translucent/')).length}`
     + ` -> ${failures.filter((f) => f.startsWith('translucent/')).join(' | ') || 'tidak ada'}`);
 
+  /* Pixel contrast, QA's ruler: the surface is the ring median around the glyph
+     (that is how the 4.43:1 for the active lyric was measured), so the sheen
+     lift that made the CSS numbers optimistic is included. The 95th percentile
+     ring pixel is reported next to it as the strictest reading. */
+  const pixelRows = (prop) => Object.keys(report.glass.liquid).flatMap((lk) => ['light', 'dark', 'busy']
+    .map((k) => ({ lk, k, v: report.glass.liquid[lk][k][prop] })))
+    .filter((x) => x.v && x.v.ratioCss !== null);
+  const clockPx = [...pixelRows('clockPixels'), ...pixelRows('clockMediaPixels')];
+  const lyricPx = pixelRows('lyricPixels');
+  const minClock = clockPx.length ? Math.min(...clockPx.map((x) => x.v.ratioCss)) : -1;
+  const minLyric = lyricPx.length ? Math.min(...lyricPx.map((x) => x.v.ratioCss)) : -1;
+  /* p95 only for the idle clock: the ring around the media clock touches the
+     track title glyphs, so its bright end is text, not surface. */
+  const idleClockPx = pixelRows('clockPixels');
+  const minClockWorst = idleClockPx.length ? Math.min(...idleClockPx.map((x) => x.v.ratioWorst)) : -1;
+  const minLyricWorst = lyricPx.length ? Math.min(...lyricPx.map((x) => x.v.ratioWorst)) : -1;
+  check('Liquid glass: jam (idle + media pill) >= 6.0:1 diukur piksel, ring median',
+    minClock >= 6,
+    `min=${minClock} (pill idle p95 ${minClockWorst}) dari ${clockPx.length} kombinasi; `
+    + clockPx.map((x) => `${x.lk}/${x.k}=${x.v.ratioCss}`).join(' '));
+  check('Liquid glass: lirik aktif >= 5.0:1 diukur piksel, ring median',
+    minLyric >= 5,
+    `min=${minLyric} (p95 terburuk ${minLyricWorst}) dari ${lyricPx.length} kombinasi; `
+    + lyricPx.map((x) => `${x.lk}/${x.k}=${x.v.ratioCss}/${x.v.ratioWorst}`).join(' '));
+
   /* ------------------------------------------------------------ B. notch */
   report.notch = {};
   win.setBounds(boundsFor('mini', settingsFor('mini')));
@@ -404,6 +570,8 @@ async function main() {
   fs.writeFileSync(path.join(SHOT_DIR, 'notch-64x14.png'), notchShot.toPNG());
   fs.writeFileSync(path.join(SHOT_DIR, 'notch-fix-64x14-6x.png'),
     notchShot.resize({ width: notchShot.getSize().width * 6, quality: 'best' }).toPNG());
+  console.log('  notch inset per baris (acuan user: y6-8=0, y9-10=1, y11=2, y12=3, y13=5): '
+    + notchBox.rows.map((r) => `y${r.y}=${r.inset}/${r.coverageInset}`).join(' '));
   report.notch.clock = {
     window: { width: content[0], height: content[1] },
     css: { stripHeight: notchCss.stripHeight, stripRadius: notchCss.stripRadius },
@@ -416,9 +584,15 @@ async function main() {
     Boolean(notchBox) && Math.abs(notchBox.width - MINI.width) <= 2
       && Math.abs(notchBox.height - MINI.height) <= 2 && notchBox.topGap === 0,
     notchBox && `w=${notchBox.width} h=${notchBox.height} topGap=${notchBox.topGap}`);
-  check('notch: sudut bawah membulat ~5 px (baris terbawah menyempit 1-3.5 px)',
-    Boolean(notchBox) && notchBox.bottomInset >= 1 && notchBox.bottomInset <= 3.5,
-    notchBox && `bottom=${notchBox.bottomRowWidth}/${notchBox.width} inset=${notchBox.bottomInset} (radius 11 dulu ~7.7)`);
+  /* Reference curve, measured from the user's own screenshot, row by row. */
+  const REF_ROWS = [0, 0, 0, 1, 1, 2, 3, 5];   // inset for y6..y13
+  const rowDiff = notchBox
+    ? Math.max(...REF_ROWS.map((want, i) => Math.abs((notchBox.rows[6 + i] ? notchBox.rows[6 + i].inset : 0) - want)))
+    : 99;
+  check('notch: kurva sudut bawah cocok dengan acuan per baris (+/-1.5 px)',
+    rowDiff <= 1.5,
+    `selisih maks=${rowDiff}; live ${notchBox.rows.slice(6).map((r) => `y${r.y}=${r.inset}`).join(' ')}`
+    + ` vs acuan ${REF_ROWS.map((v, i) => `y${6 + i}=${v}`).join(' ')}`);
 
   /* notched island style: the same strip, not the old 39 px block */
   win.setBounds(boundsFor('mini', settingsFor('mini')));

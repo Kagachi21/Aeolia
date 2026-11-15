@@ -68,7 +68,7 @@ input:disabled {
    strip in step with the zoomed layers on a scaled display. */
 #island[data-state="mini"] {
   height: calc(var(--mini-h, 14px) * var(--island-scale, 1));
-  border-radius: 0 0 calc(5px * var(--island-scale, 1)) calc(5px * var(--island-scale, 1));
+  border-radius: 0 0 calc(8px * var(--island-scale, 1)) calc(8px * var(--island-scale, 1));
 }
 
 #island[data-state="mini"][data-mini-mode="cat"] { --mini-h: 26px; }
@@ -205,6 +205,12 @@ input:disabled {
 #island[data-surface="Liquid glass"] .hint,
 #island[data-surface="Liquid glass"] .empty,
 #island[data-surface="Liquid glass"] .cal-agenda span { color: #d3d8e4; }
+/* The active lyric line keeps the user accent, but #6ea8ff only reaches 4.43:1
+   once the sheen is painted under the glyph. Mixed 20% toward white: same hue,
+   enough luminance to clear AA. */
+#island[data-surface="Liquid glass"] .lyric-line.active {
+  color: color-mix(in srgb, var(--accent) 80%, #ffffff);
+}
 
 #island[data-accent="#ffffff"] { --accent: #ffffff; }
 #island[data-accent="#e9c46a"] { --accent: #e9c46a; }
@@ -495,6 +501,13 @@ input:disabled {
   font-size: 10px;
   color: #b6bdcc;
 }
+
+/* On the glass surface the sheen lifts the base under the glyph, so the dimmed
+   media clock (#b6bdcc) measured 5.38:1 median and 4.44:1 at the lightest ring
+   pixel. Lifted only for the media pill on glass; the idle clock already
+   inherits the full #f2f5ff. Declared after the data-media rule on purpose:
+   same specificity, so source order decides which one wins. */
+#island[data-surface="Liquid glass"][data-media="true"] #clock { color: #e6eaf2; }
 
 .media-text {
   overflow: hidden;
