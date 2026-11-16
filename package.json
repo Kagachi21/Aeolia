@@ -13,7 +13,13 @@
     "dist:portable": "node scripts/build-win.js portable",
     "dist:msix": "node scripts/build-win.js msix",
     "dist:all": "npm run build && node scripts/build-win.js all",
-    "runtime": "electron-builder --win dir"
+    "runtime": "electron-builder --win dir",
+    "probe:r7:contract": "npm run build && node _probe-r7-contract.js",
+    "probe:r7:notice": "npm run build && electron _probe-r7-notice-live.js",
+    "probe:r7:mic": "npm run build && electron _probe-r7-mic-live.js",
+    "probe:r7:cam": "npm run build && electron _probe-r7-cam-live.js",
+    "probe:r7:glass": "npm run build && electron _probe-r7-glass.js",
+    "probe:r7:all": "npm run build && node _probe-r7-run-all.js"
   },
   "dependencies": {
     "koffi": "^3.3.7"

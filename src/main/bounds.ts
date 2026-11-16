@@ -34,6 +34,40 @@ export const MIC_PILL_EXTRA = 172;
 /** Extra pill width reserved for the notice/meeting banner overlay. */
 export const BANNER_EXTRA = 250;
 
+/** The part of the pill window that belongs ONLY to the meeting capsules.
+    #micPill is a sibling of #island and #island gives this strip back with
+    `--mic-extra` (renderer.ts). Hover-to-open must never claim it, otherwise
+    the card opens before a click on Mic/Cam can land. Pure geometry so the
+    rule can be pinned by probes without launching Electron. */
+export function micStripRect(
+  bounds: Rect,
+  settings: Settings,
+  active: boolean
+): Rect | null {
+  if (!active) return null;
+  const scale = effectiveScalePct(settings) / 100;
+  const extra = Math.min(bounds.width, Math.round(MIC_PILL_EXTRA * scale));
+  if (extra <= 0) return null;
+  const rightSide = settings.islandPosition === 'right'
+    || settings.islandPosition === 'right-side';
+  return {
+    x: rightSide ? bounds.x : bounds.x + bounds.width - extra,
+    y: bounds.y,
+    width: extra,
+    height: bounds.height,
+  };
+}
+
+/** Inclusive point-in-rect test. */
+export function pointInRect(
+  point: { x: number; y: number },
+  rect: Rect | null
+): boolean {
+  if (!rect) return false;
+  return point.x >= rect.x && point.x <= rect.x + rect.width
+    && point.y >= rect.y && point.y <= rect.y + rect.height;
+}
+
 // The window is exactly the island, never a full-width overlay, so a click
 // outside it lands on the app below. openHeight fits the open card to its
 // panel; pillWidth makes room for the cat and the scrolling track name.

@@ -74,7 +74,7 @@ const electronMock = {
 };
 
 const stubs = {
-  activeWindow: { getActiveWindow: () => ({ process: 'explorer', title: 'QA', maximized: false, fullscreen: false, rect: { x: 0, y: 0, width: 1920, height: 1080 } }), isBusyProcess: () => false },
+  activeWindow: { getActiveWindow: () => ({ process: 'explorer', title: 'QA', maximized: false, fullscreen: false, rect: { x: 0, y: 0, width: 1920, height: 1080 } }), isBusyProcess: () => false, BROWSERS: new Set(), browserShouldShrink: () => false, browserTabCount: () => 0, focusProcessWindow: () => true },
   thinFrame: { dropThickFrame: () => {} },
   media: { readMedia: () => ({ playing: false, title: '' }) },
   power: { readPower: () => ({ percent: 80, charging: false }) },
@@ -481,22 +481,26 @@ Module._load = function (request, parent, isMain) {
 
   check('IPC media:prev dan media:next terdaftar', ipcOn.has('media:prev') && ipcOn.has('media:next'));
 
-  send('notice:open', 'WhatsApp Web', 'Halo');
-  check('WhatsApp -> protokol whatsapp://', externalOpens[0] === 'whatsapp://', externalOpens);
-  send('notice:open', 'Discord', 'ping');
-  check('Discord -> protokol discord://', externalOpens[1] === 'discord://', JSON.stringify(externalOpens));
-  send('notice:open', 'Zoom Meeting', 'x');
-  check('Zoom -> protokol zoommtg://', externalOpens[2] === 'zoommtg://');
-  send('notice:open', 'Aplikasi Tak Dikenal', 'isi pesan penting');
-  check('Aplikasi tak dikenal -> pencarian web (noticeOpenLinks on)',
-    externalOpens[3].startsWith('https://www.google.com/search?q='), externalOpens[3]);
+  let opened = await ipcHandle.get('notice:open')(null, 'WhatsApp Web', 'Halo');
+  check('WhatsApp -> protokol whatsapp://', opened.ok === true && externalOpens[0] === 'whatsapp://', externalOpens);
+  opened = await ipcHandle.get('notice:open')(null, 'Discord', 'ping');
+  check('Discord -> protokol discord://', opened.ok === true && externalOpens[1] === 'discord://', JSON.stringify(externalOpens));
+  opened = await ipcHandle.get('notice:open')(null, 'Zoom Meeting', 'x');
+  check('Zoom -> protokol zoommtg://', opened.ok === true && externalOpens[2] === 'zoommtg://');
+  const beforeUnknown = externalOpens.length;
+  opened = await ipcHandle.get('notice:open')(null, 'Aplikasi Tak Dikenal', 'isi pesan penting');
+  check('Aplikasi tak dikenal -> ok:false, tanpa pencarian web',
+    opened.ok === false && opened.code === 'unknown-app'
+    && externalOpens.length === beforeUnknown, { opened, opens: externalOpens });
 
-  /* turn the web fallback off via the real save API (cache-aware) */
+  /* the setting blocks every app now, via the real save API (cache-aware) */
   settingsLive.saveSettings({ ...settingsLive.current(), noticeOpenLinks: false });
   const before = externalOpens.length;
-  send('notice:open', 'Aplikasi Tak Dikenal', 'isi');
-  check('noticeOpenLinks off: aplikasi tak dikenal tidak membuka apa pun',
-    externalOpens.length === before, externalOpens.length - before);
+  opened = await ipcHandle.get('notice:open')(null, 'WhatsApp', 'isi');
+  check('noticeOpenLinks off: aplikasi dikenal juga tidak membuka apa pun',
+    opened.ok === false && opened.code === 'disabled' && externalOpens.length === before,
+    { opened, delta: externalOpens.length - before });
+  settingsLive.saveSettings({ ...settingsLive.current(), noticeOpenLinks: true });
 
   /* media IPC handlers forward to the key stubs without touching real hardware */
   send('media:prev');
@@ -524,12 +528,23 @@ Module._load = function (request, parent, isMain) {
   const clipWrites = [];
   electronMock.clipboard.writeText = (t) => clipWrites.push(t);
   const replyKnown = await ipcHandle.get('notice:reply')(null, 'WhatsApp', 'duren', 'oke bentar');
-  check('notice:reply WhatsApp: teks disalin ke clipboard', clipWrites.includes('oke bentar'), JSON.stringify(clipWrites));
-  check('notice:reply WhatsApp: aplikasi dibuka lewat protokol', replyKnown.opened === true
-    && externalOpens.includes('whatsapp://'), JSON.stringify(replyKnown));
+  check('notice:reply WhatsApp: tidak menyalin teks', clipWrites.length === 0, JSON.stringify(clipWrites));
+  check('notice:reply WhatsApp: aplikasi dibuka tanpa teks',
+    replyKnown.ok === true && replyKnown.via === 'protocol' && externalOpens.includes('whatsapp://')
+    && externalOpens.every((u) => !/send\?text=/.test(u)), JSON.stringify(replyKnown));
+  check('notice:reply WhatsApp: petunjuk jujur untuk pengguna',
+    replyKnown.hint === 'Aplikasi dibuka · ketik dan kirim di sana', replyKnown.hint);
   const replyUnknown = await ipcHandle.get('notice:reply')(null, 'Aplikasi Anonim', 'x', 'hai');
-  check('notice:reply aplikasi tanpa protokol: jujur opened:false', replyUnknown.opened === false,
-    JSON.stringify(replyUnknown));
+  check('notice:reply aplikasi tanpa protokol: ok:false + alasan',
+    replyUnknown.ok === false && replyUnknown.code === 'unknown-app'
+    && replyUnknown.hint === 'Aplikasi sumber tidak dikenali.', JSON.stringify(replyUnknown));
+  settingsLive.saveSettings({ ...settingsLive.current(), noticeOpenLinks: false });
+  const opensBeforeBlock = externalOpens.length;
+  const replyBlocked = await ipcHandle.get('notice:reply')(null, 'WhatsApp', 'x', 'hai');
+  check('noticeOpenLinks off: Balas tidak membuka apa pun',
+    replyBlocked.ok === false && replyBlocked.code === 'disabled'
+    && externalOpens.length === opensBeforeBlock, JSON.stringify(replyBlocked));
+  settingsLive.saveSettings({ ...settingsLive.current(), noticeOpenLinks: true });
 
   /* --- lagu jalan menahan pill: notch tidak menelan kontrol musik ---
      Driven through the real poller (pollIntervalMs 500) and the real 2 s
@@ -561,6 +576,38 @@ Module._load = function (request, parent, isMain) {
     String(lastIslandState()));
   stubs.activeWindow.getActiveWindow = restoreActiveWindow;
   settingsLive.saveSettings({ ...settingsLive.current(), miniTrigger: 'fullscreen' });
+
+  /* --- banner/notch race: a banner must hold the pill open --- */
+  const bannerHandler = ipcOn.get('banner:show');
+  /* Start from a healthy pill base, THEN raise a banner and only afterwards
+     let a fullscreen app appear. The old code set base=mini mid banner and
+     clipped the 4200 ms notice into a 14 px notch. */
+  stubs.activeWindow.getActiveWindow = () => ({
+    process: 'explorer', title: 'Desktop', maximized: false, fullscreen: false,
+    rect: { left: 0, top: 0, right: 1920, bottom: 1080 },
+  });
+  await new Promise((r) => setTimeout(r, 1200));
+  const pillBefore = lastIslandState();
+  if (bannerHandler) {
+    bannerHandler(null, true);
+    await new Promise((r) => setTimeout(r, 160));
+    stubs.activeWindow.getActiveWindow = () => ({
+      process: 'game', title: 'Game', maximized: false, fullscreen: true,
+      rect: { left: 0, top: 0, right: 1920, bottom: 1080 },
+    });
+    await new Promise((r) => setTimeout(r, 1300));
+    check('banner aktif + fullscreen muncul: badan tetap pil, tidak terpotong notch',
+      pillBefore === 'pill' && lastIslandState() === 'pill',
+      `sebelum=${pillBefore} saat=${lastIslandState()}`);
+    bannerHandler(null, false);
+    await new Promise((r) => setTimeout(r, 1300));
+    check('banner selesai: fullscreen kembali mengecil ke notch (tidak macet lebar)',
+      lastIslandState() === 'mini', String(lastIslandState()));
+  } else {
+    check('banner aktif + fullscreen muncul: badan tetap pil, tidak terpotong notch', false,
+      'ipc banner:show belum terdaftar');
+  }
+  stubs.activeWindow.getActiveWindow = restoreActiveWindow;
 
   /* --- openAction mengikuti musik: kartu dibuka langsung ke tab Music --- */
   const lastIslandUpdate = () => electronMock._wcSends.filter((s) => s.ch === 'island:update').pop();
@@ -661,6 +708,19 @@ Module._load = function (request, parent, isMain) {
   check('musicColors: palet achromatic dapat 3 hue acuan, tidak identik',
     Boolean(deepGray) && new Set([deepGray.c1, deepGray.c2, deepGray.c3]).size === 3
       && ['c1', 'c2', 'c3'].every((k) => chromaOf(deepGray[k]) >= 55), JSON.stringify(deepGray));
+
+  /* --- first-run greeting for an upgrading install --- */
+  const statePath = path.join(tmp, 'state.json');
+  fs.writeFileSync(statePath, JSON.stringify({ lastTab: 'web', clips: [] }), 'utf8');
+  delete require.cache[require.resolve('./dist/main/store.js')];
+  const upgraded = require('./dist/main/store.js').load();
+  check('upgrade: state.json lama tanpa greetingSeen tetap menyapa sekali',
+    upgraded.greetingSeen === false, JSON.stringify({ greetingSeen: upgraded.greetingSeen }));
+  fs.writeFileSync(statePath, JSON.stringify({ lastTab: 'web', clips: [], greetingSeen: true }), 'utf8');
+  delete require.cache[require.resolve('./dist/main/store.js')];
+  const alreadySeen = require('./dist/main/store.js').load();
+  check('install yang sudah menyapa tidak mengulang sapaan',
+    alreadySeen.greetingSeen === true, JSON.stringify({ greetingSeen: alreadySeen.greetingSeen }));
 
   const failed = results.filter((r) => !r.ok);
   console.log(`\nQA_FEATURES ${results.length - failed.length}/${results.length} PASS`);

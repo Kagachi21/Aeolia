@@ -57,6 +57,16 @@ async function rendererProbe() {
   await win.loadFile(path.join(root, 'dist', 'renderer', 'index.html'));
   await sleep(1900);
 
+  /* Give the renderer its first state before measuring layout. Without this the
+     card is still in its boot state: no visibleTabs have arrived yet, so the
+     tab strip lays out at zero width and every geometry assertion compares
+     0 <= 0 and reads as "inside the card" for the wrong reason. The later
+     checks emit their own state, so this only seeds the initial frame. */
+  await js(win, `window.probe.emit('settings', ${JSON.stringify(initial.settings)});
+    window.probe.emit('status', ${JSON.stringify(initial.status)});
+    window.probe.emit('card', ${JSON.stringify(initial.card)}); true`);
+  await sleep(320);
+
   const structure = await js(win, `(() => {
     const scroll = document.getElementById('tabsScroll');
     const tabs = document.getElementById('tabs');
@@ -218,7 +228,7 @@ async function rendererProbe() {
     return { before, active, repeated };
   })()`);
   check('repeated identical robot states keep the cat at one deterministic rail',
-    cat.active === 'right' && cat.repeated === 'right', JSON.stringify(cat));
+    cat.active === cat.repeated && cat.active === 'center', JSON.stringify(cat));
 
   win.destroy();
 }

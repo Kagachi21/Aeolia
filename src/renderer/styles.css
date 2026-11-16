@@ -50,6 +50,9 @@ input:disabled {
 #island {
   --accent: #e9eef7;
   --robot-eye: var(--accent);
+  /* Specular origin in pane percentages; renderer.ts moves it with the pointer. */
+  --glass-x: 30%;
+  --glass-y: 8%;
   position: absolute;
   top: 0;
   left: 0;
@@ -59,6 +62,9 @@ input:disabled {
   color: #f2f5ff;
   font: 11px/1.35 "Segoe UI", system-ui, sans-serif;
   overflow: hidden;
+  /* Shape morphing: the window bounds animate in main.ts, the rounded rim
+     eases here so pill and expanded card read as one continuous surface. */
+  transition: border-radius 320ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* macOS-notch look. The window itself is 39 px tall (Windows floors frameless
@@ -81,7 +87,7 @@ input:disabled {
 
 #island[data-state="open"] {
   height: 100%;
-  border-radius: 14px;
+  border-radius: 18px;
 }
 
 #island[data-hidden="true"][data-hovered="false"]:not([data-state="open"]) {
@@ -112,7 +118,15 @@ input:disabled {
 #island[data-surface="Lavender"] { background: #241f2e; }
 #island[data-surface="Peach"] { background: #2e2420; }
 #island[data-surface="Sakura"] { background: #2e2226; }
-#island[data-surface="Candy glass"] { background: rgba(43, 30, 34, 0.9); }
+/* Candy glass is the warm sibling of Liquid glass: same optical construction,
+   but the base is rose-tinted and the rim carries a sugar-bright highlight. */
+#island[data-surface="Candy glass"] {
+  color: #1c2330;
+  background:
+    linear-gradient(155deg, rgba(255, 255, 255, 0.82) 0%, rgba(255, 210, 228, 0.36) 28%, rgba(255, 188, 216, 0.14) 62%, rgba(255, 255, 255, 0.54) 100%),
+    linear-gradient(0deg, rgba(255, 192, 220, calc(0.72 + 0.14 * var(--glass-a, 0.55))) 0%, rgba(255, 226, 238, calc(0.78 + 0.12 * var(--glass-a, 0.55))) 100%);
+  border-color: rgba(255, 255, 255, 0.62);
+}
 #island[data-surface="Matcha"] { background: #1d241c; }
 #island[data-surface="Aurora"] {
   background:
@@ -137,6 +151,15 @@ input:disabled {
    Depth is simulated instead: a tinted base whose alpha follows --glass-a
    (the "kekinian" thickness control, 0.2-0.9), a bright top bevel, and a
    soft inner sheen like the iOS Liquid Glass material. */
+/* No drop shadow, by design.
+   A window cannot be taller than the island: the pill is ~39 px and the mini
+   notch is 14 px. An outer box-shadow is painted outside the border box and is
+   NOT clipped by the element's own overflow, so it always ran past the window
+   edge and the OS cut it into a hard rectangle - the "bayangan kotak lancip"
+   under the pill and the notch. The rim now carries all of the depth: the top
+   specular bevel, the inner contour and the bottom waterline are what make the
+   edge read as glass. Anything offset/blurred belongs inside the pane, never
+   around it. */
 #island[data-surface="Liquid glass"],
 #island[data-surface="Translucent"] {
   border-color: rgba(255, 255, 255, calc(0.22 + 0.24 * var(--glass-a, 0.55)));
@@ -144,18 +167,25 @@ input:disabled {
     inset 0 1.5px 0.5px -0.5px rgba(255, 255, 255, 0.6),
     inset 0 0 0 1px rgba(255, 255, 255, 0.1),
     inset 0 -10px 22px rgba(255, 255, 255, 0.045),
-    0 12px 30px rgba(0, 0, 0, 0.34);
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
 }
 #island[data-surface="Liquid glass"] {
-  /* The base is a STABLE dark slate, not a tint of whatever sits behind the
-     window: a transparent Electron window shows the desktop through every
-     semi transparent layer, so a light desktop used to wash the pill out to a
-     pale blue grey and the same island looked different on every wallpaper
-     (the "warna belang" complaint). The white sheen stays on top for the
-     bevel; --glass-a still controls how much of the desktop is let through. */
+  /* iOS Liquid Glass is a LIGHT material, not a dark one. It is a cool,
+     clear frost: a bright specular sheet over a milky base, with dark ink on
+     top. The earlier version was a near opaque dark slate, which read as a
+     tinted plastic bar rather than glass.
+     The base alpha has a floor because this window cannot sample the desktop
+     (no backdrop-filter on a transparent Electron window), so the material has
+     to carry its own contrast: at 0.74 the pane stays light enough for
+     #1c2330 ink on ANY wallpaper, which is the whole reason the floor exists.
+     The floor is 0.74 rather than 0.70 because the pill is the thinnest pane
+     in the product and at 0.70 a black wallpaper pulled it down to #cacdd3,
+     where the media clock only reached 5.26:1.
+     --glass-a still opens it up as the user raises the glass level. */
+  color: #1c2330;
   background:
-    linear-gradient(165deg, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0.06) 28%, rgba(255, 255, 255, 0.015) 55%, rgba(255, 255, 255, 0.05) 100%),
-    linear-gradient(0deg, rgba(20, 28, 24, calc(0.90 + 0.07 * var(--glass-a, 0.55))) 0%, rgba(28, 40, 34, calc(0.87 + 0.07 * var(--glass-a, 0.55))) 100%);
+    linear-gradient(165deg, rgba(255, 255, 255, 0.78) 0%, rgba(255, 255, 255, 0.34) 26%, rgba(255, 255, 255, 0.14) 58%, rgba(255, 255, 255, 0.5) 100%),
+    linear-gradient(0deg, rgba(228, 234, 246, calc(0.74 + 0.18 * var(--glass-a, 0.55))) 0%, rgba(244, 247, 253, calc(0.78 + 0.16 * var(--glass-a, 0.55))) 100%);
 }
 /* On the tall OPEN card the white sheen must not stretch with content: a long
    notice list used to push the bright band down under the hint text, dropping
@@ -163,62 +193,583 @@ input:disabled {
    The pill keeps the percentage sheen above and its approved look unchanged. */
 #island[data-surface="Liquid glass"][data-state="open"] {
   background:
-    linear-gradient(165deg, rgba(255, 255, 255, 0.22) 0px, rgba(255, 255, 255, 0.06) 22px, rgba(255, 255, 255, 0.015) 56px, rgba(255, 255, 255, 0.015) 100%),
-    linear-gradient(0deg, rgba(20, 28, 24, calc(0.90 + 0.07 * var(--glass-a, 0.55))) 0%, rgba(28, 40, 34, calc(0.87 + 0.07 * var(--glass-a, 0.55))) 100%);
+    linear-gradient(165deg, rgba(255, 255, 255, 0.78) 0px, rgba(255, 255, 255, 0.34) 22px, rgba(255, 255, 255, 0.14) 56px, rgba(255, 255, 255, 0.16) 100%),
+    linear-gradient(0deg, rgba(228, 234, 246, calc(0.74 + 0.18 * var(--glass-a, 0.55))) 0%, rgba(244, 247, 253, calc(0.78 + 0.16 * var(--glass-a, 0.55))) 100%);
 }
+/* Material dials adapted from open-glass-ui (MIT), mapped to CSS tokens.
+   The window has no OS backdrop to sample, so these control opacity and light
+   only. They do not claim desktop refraction. */
+#island {
+  --glass-frost: 0.55;
+  --glass-tint: 236 244 255;
+  --glass-density: 0.18;
+  --glass-saturation: 1.18;
+  --glass-brightness: 1.06;
+  --glass-edge: 0.62;
+  --glass-depth: 2.5px;
+  --glass-light-dir: 205deg;
+}
+#island[data-glass-variant="clear"] {
+  --glass-frost: 0.28;
+  --glass-density: 0.08;
+  --glass-tint: 228 236 250;
+  --glass-edge: 0.38;
+}
+/* ---- Original iOS-like Liquid Glass approximation ----
+   Electron's transparent always-on-top window has NO backdrop texture to
+   sample: backdrop-filter is a documented no-op here, and a WebGL shader
+   would need a per-frame desktop capture (expensive and permission gated).
+   The optical model is reproduced with six compositor-friendly layers painted
+   BEHIND the content, back to front:
+     1. refraction  - convex-lens light bent into the top/bottom rim, edge masked
+     2. dispersion  - saturated red/cyan/yellow/green prismatic fringe at the rim
+     3. thickness   - bright water-line hairline + dark gap = glass depth
+     4. Fresnel     - strong directional rim light, brightest at grazing angles
+     5. glare       - broad soft specular streak that drifts with the morph
+     6. glint       - crisp short specular hotspot near the top-left
+   Every layer is pointer-events:none, follows --glass-a (glassLevel) and is
+   hidden by [data-glass-fx="off"], which leaves the stable dark glass. The
+   refraction/thickness masks keep the pane centre clear so body text keeps
+   its WCAG contrast. No LiquidGlassKit code is used (Swift/Metal, unlicensed). */
+.glass-fx,
+.glass-fx > span {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+}
+.glass-fx {
+  display: none;
+  overflow: hidden;
+  transition: border-radius 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+#island[data-surface="Liquid glass"][data-state="pill"]:not([data-glass-fx="off"]) .glass-fx,
+#island[data-surface="Liquid glass"][data-state="open"]:not([data-glass-fx="off"]) .glass-fx {
+  display: block;
+}
+/* 1. Refraction: light entering the top edge and focusing along the bottom,
+   like a convex lens. A radial mask leaves the centre 52% untouched, so the
+   text sitting over the pane keeps its approved contrast. */
+.glass-fx > .glass-fx__refract {
+  inset: -2px;
+  background:
+    linear-gradient(to bottom,
+      rgba(214, 240, 255, 0.22) 0%, rgba(190, 225, 255, 0.08) 12%,
+      rgba(0, 0, 0, 0) 30%, rgba(0, 0, 0, 0) 66%,
+      rgba(198, 230, 255, 0.10) 88%, rgba(232, 246, 255, 0.20) 100%),
+    radial-gradient(120% 80% at 50% -20%, rgba(205, 235, 255, 0.14), rgba(0, 0, 0, 0) 62%);
+  /* The mask opens a touch earlier than the glare so the bright lens bands
+     stay pinned to the rim and never become the dominant interior colour.
+     That is what keeps the pane identical on light, dark and busy wallpapers
+     (no "warna belang"). */
+  -webkit-mask-image: radial-gradient(115% 130% at 50% 50%, rgba(0, 0, 0, 0) 46%, #000 96%);
+  mask-image: radial-gradient(115% 130% at 50% 50%, rgba(0, 0, 0, 0) 46%, #000 96%);
+  filter: blur(1.4px);
+  opacity: calc(0.48 + 0.42 * var(--glass-a, 0.55));
+  mix-blend-mode: screen;
+}
+/* 2. Chromatic dispersion: white light splitting through the thick glass
+   edge. Four offset inset fringes (red left, cyan right, warm top, cool
+   bottom) are stronger than the old barely-visible 0.3-alpha version. */
+.glass-fx > .glass-fx__dispersion {
+  box-shadow:
+    inset 2.5px 0 2px -1.5px rgba(255, 74, 110, 0.55),
+    inset -2.5px 0 2px -1.5px rgba(58, 192, 255, 0.60),
+    inset 0 2.5px 2px -1.5px rgba(255, 222, 120, 0.50),
+    inset 0 -2.5px 2px -1.5px rgba(116, 255, 212, 0.50);
+  filter: blur(0.5px);
+  opacity: calc(0.5 + 0.5 * var(--glass-a, 0.55));
+  mix-blend-mode: screen;
+}
+/* 3. Glass thickness: a masked 2.5px ring carrying a bright specular
+   water-line that fades into a dark inner gap. This dark-then-light contour
+   is what gives the rim its sense of real depth rather than a flat stroke. */
+.glass-fx > .glass-fx__inner {
+  padding: 2.5px;
+  background: linear-gradient(160deg,
+    rgba(255, 255, 255, 0.62) 0%, rgba(224, 242, 255, 0.18) 22%,
+    rgba(0, 0, 0, 0.42) 50%, rgba(0, 0, 0, 0.34) 74%,
+    rgba(188, 228, 255, 0.48) 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: calc(0.42 + 0.42 * var(--glass-a, 0.55));
+}
+/* 4. Fresnel edge lighting: a directional conic rim, brightest where the
+   surface turns away from the viewer. Two-mask trick paints only the ring. */
+.glass-fx > .glass-fx__fresnel {
+  padding: 1.6px;
+  background: conic-gradient(from 205deg at 50% 50%,
+    rgba(255, 255, 255, 0.72), rgba(150, 205, 255, 0.16) 18%,
+    rgba(255, 255, 255, 0.04) 38%, rgba(255, 196, 150, 0.20) 62%,
+    rgba(215, 240, 255, 0.20) 78%, rgba(255, 255, 255, 0.66) 92%,
+    rgba(255, 255, 255, 0.72));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: calc(0.42 + 0.45 * var(--glass-a, 0.55));
+  mix-blend-mode: screen;
+}
+/* One lit edge only. It rides the existing optical layer, so no second glass
+   surface is stacked and the rim stays legible over light and dark panes. */
+.glass-fx > .glass-fx__lit-edge {
+  padding: 1.6px;
+  background: linear-gradient(var(--glass-light-dir),
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, calc(0.5 * var(--glass-edge))) 22%,
+    rgba(255, 255, 255, calc(var(--glass-edge))) 48%,
+    rgba(255, 255, 255, calc(0.4 * var(--glass-edge))) 74%,
+    rgba(255, 255, 255, 0) 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: calc(0.35 + 0.5 * var(--glass-a, 0.55));
+  mix-blend-mode: screen;
+}
+/* 5. Broad directional specular streak across the upper bevel. */
+.glass-fx > .glass-fx__glare {
+  background: linear-gradient(108deg, rgba(0, 0, 0, 0) 16%, rgba(255, 255, 255, 0.11) 34%,
+    rgba(255, 255, 255, 0.03) 47%, rgba(0, 0, 0, 0) 62%);
+  -webkit-mask-image: linear-gradient(to bottom, #000 0, transparent 60px);
+  mask-image: linear-gradient(to bottom, #000 0, transparent 60px);
+  opacity: calc(0.38 + 0.45 * var(--glass-a, 0.55));
+  mix-blend-mode: screen;
+  transform: translateX(-10%);
+  transition: transform 620ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+/* 6. Crisp specular hotspot: a short, hard-edged white glint near the
+   top-left plus a thin diagonal streak. Explicit px background-size keeps it
+   a small sharp highlight instead of a diffuse wash. Height-masked to the
+   top bevel, and shifted as the pill morphs into the card. */
+.glass-fx > .glass-fx__glint {
+  background-image:
+    radial-gradient(ellipse at center, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.30) 38%, rgba(0, 0, 0, 0) 68%),
+    linear-gradient(102deg, rgba(0, 0, 0, 0) 42%, rgba(255, 255, 255, 0.44) 49%, rgba(255, 255, 255, 0.54) 51%, rgba(0, 0, 0, 0) 58%);
+  background-size: 30px 13px, 100% 100%;
+  background-position: 18% 2px, 0 0;
+  background-repeat: no-repeat;
+  -webkit-mask-image: linear-gradient(to bottom, #000 0, rgba(0, 0, 0, 0.7) 18px, transparent 34px);
+  mask-image: linear-gradient(to bottom, #000 0, rgba(0, 0, 0, 0.7) 18px, transparent 34px);
+  opacity: calc(0.55 + 0.4 * var(--glass-a, 0.55));
+  mix-blend-mode: screen;
+  transform: translateX(-6%);
+  transition: transform 620ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+#island[data-state="open"] .glass-fx__glare { transform: translateX(8%); }
+#island[data-state="open"] .glass-fx__glint { transform: translateX(6%); }
+@media (prefers-reduced-motion: reduce) {
+  .glass-fx > .glass-fx__glare,
+  .glass-fx > .glass-fx__glint { transition: none; }
+}
+
+/* ---- Light-pane retune for the glass surfaces ----
+   The six-layer stack above is tuned for the dark Liquid glass base, where
+   screen-blended white reads as a highlight. On the milky Translucent pane a
+   screen of white clamps to white and disappears, so the same layers are
+   re-tuned here: normal blending, a grey inner contour for thickness, and
+   white highlights that only lift a few levels. Both glass surfaces therefore
+   read as real glass instead of a flat frosted rectangle. */
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"])[data-state="pill"]:not([data-glass-fx="off"]) .glass-fx,
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"])[data-state="open"]:not([data-glass-fx="off"]) .glass-fx {
+  display: block;
+}
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .glass-fx__refract {
+  background:
+    /* Edge vignette: a lens gathers light at the rim, so the boundary is
+       cooler and darker than the clear centre even on a white desktop. */
+    radial-gradient(120% 100% at 50% 45%, rgba(255, 255, 255, 0) 52%, rgba(74, 90, 118, 0.32) 88%, rgba(54, 70, 100, 0.38) 100%),
+    linear-gradient(to bottom,
+      rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0.16) 12%,
+      rgba(0, 0, 0, 0) 30%, rgba(0, 0, 0, 0) 66%,
+      rgba(96, 112, 142, 0.14) 88%, rgba(84, 100, 132, 0.2) 100%),
+    radial-gradient(120% 80% at 50% -20%, rgba(255, 255, 255, 0.6), rgba(0, 0, 0, 0) 62%);
+  -webkit-mask-image: radial-gradient(115% 130% at 50% 50%, rgba(0, 0, 0, 0) 46%, #000 96%);
+  mask-image: radial-gradient(115% 130% at 50% 50%, rgba(0, 0, 0, 0) 46%, #000 96%);
+  filter: blur(1.4px);
+  opacity: calc(0.55 + 0.35 * var(--glass-a, 0.55));
+  mix-blend-mode: normal;
+}
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .glass-fx__dispersion {
+  box-shadow:
+    inset 2.5px 0 2px -1.5px rgba(255, 96, 120, 0.42),
+    inset -2.5px 0 2px -1.5px rgba(64, 150, 255, 0.44),
+    inset 0 2.5px 2px -1.5px rgba(230, 186, 70, 0.4),
+    inset 0 -2.5px 2px -1.5px rgba(70, 200, 170, 0.4);
+  filter: blur(0.5px);
+  opacity: calc(0.5 + 0.4 * var(--glass-a, 0.55));
+  mix-blend-mode: normal;
+}
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .glass-fx__inner {
+  padding: 7px;
+  /* Corner lights: light bends hardest where the silhouette curves most. The
+     blue halo is visible on a pale pane where pure white would disappear. */
+  background:
+    radial-gradient(circle at 8% 8%, rgba(255, 255, 255, 1) 0%, rgba(150, 188, 242, 0.5) 32%, rgba(255, 255, 255, 0) 58%),
+    radial-gradient(circle at 92% 8%, rgba(255, 255, 255, 0.95) 0%, rgba(150, 188, 242, 0.42) 32%, rgba(255, 255, 255, 0) 58%),
+    radial-gradient(circle at 8% 92%, rgba(255, 255, 255, 0.95) 0%, rgba(128, 176, 232, 0.48) 32%, rgba(255, 255, 255, 0) 58%),
+    radial-gradient(circle at 92% 92%, rgba(255, 255, 255, 1) 0%, rgba(150, 188, 242, 0.5) 32%, rgba(255, 255, 255, 0) 58%),
+    /* Thicker lower waterline: the bottom edge holds more glass than the top. */
+    linear-gradient(to bottom, rgba(255, 255, 255, 0) 62%, rgba(226, 236, 252, 0.72) 88%, rgba(255, 255, 255, 0.95) 100%),
+    linear-gradient(160deg,
+      rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0.38) 22%,
+      rgba(74, 90, 118, 0.18) 50%, rgba(74, 90, 118, 0.12) 74%,
+      rgba(255, 255, 255, 0.8) 100%);
+  /* Consecutive inset contours read as refracted depth instead of one stroke. */
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 1),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.9),
+    inset 0 0 0 2px rgba(74, 90, 118, 0.28),
+    inset 0 -8px 12px -6px rgba(54, 70, 100, 0.6),
+    inset 0 0 12px rgba(255, 255, 255, 0.45);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: calc(0.52 + 0.34 * var(--glass-a, 0.55));
+  mix-blend-mode: normal;
+}
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .glass-fx__fresnel {
+  padding: 1.6px;
+  /* Two corner hotspots sit on top of the conic grazing-angle rim. */
+  background:
+    radial-gradient(circle at 10% 0%, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0) 42%),
+    radial-gradient(circle at 90% 100%, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0) 45%),
+    conic-gradient(from 205deg at 50% 50%,
+    rgba(255, 255, 255, 0.98), rgba(150, 190, 255, 0.30) 18%,
+    rgba(255, 255, 255, 0.18) 38%, rgba(255, 214, 176, 0.32) 62%,
+    rgba(204, 226, 255, 0.34) 78%, rgba(255, 255, 255, 0.92) 92%,
+    rgba(255, 255, 255, 0.98));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: calc(0.42 + 0.4 * var(--glass-a, 0.55));
+  mix-blend-mode: normal;
+}
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .glass-fx__glare {
+  /* A local lens flare: the bright point follows the pointer instead of
+     sitting in a fixed diagonal band. */
+  background: radial-gradient(140px 70px at var(--glass-x, 30%) var(--glass-y, 8%),
+    rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.4) 26%,
+    rgba(112, 142, 190, 0.24) 62%, rgba(255, 255, 255, 0) 100%);
+  -webkit-mask-image: linear-gradient(to bottom, #000 0, rgba(0, 0, 0, 0.55) 38px, transparent 76px);
+  mask-image: linear-gradient(to bottom, #000 0, rgba(0, 0, 0, 0.55) 38px, transparent 76px);
+  opacity: calc(0.45 + 0.35 * var(--glass-a, 0.55));
+  mix-blend-mode: normal;
+  transform: none;
+  transition: opacity 420ms ease;
+}
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .glass-fx__glint {
+  background-image:
+    radial-gradient(ellipse at center, rgba(255, 255, 255, 1) 0%, rgba(255, 255, 255, 0.5) 38%, rgba(0, 0, 0, 0) 68%),
+    radial-gradient(90px 40px at var(--glass-x, 30%) var(--glass-y, 8%), rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0) 100%);
+  /* Background-position carries the pointer, so the hotspot stays crisp. */
+  background-size: 34px 14px, 100% 100%;
+  background-position: calc(var(--glass-x, 30%) - 17px) calc(var(--glass-y, 8px) - 7px), 0 0;
+  background-repeat: no-repeat;
+  -webkit-mask-image: linear-gradient(to bottom, #000 0, rgba(0, 0, 0, 0.7) 28px, transparent 58px);
+  mask-image: linear-gradient(to bottom, #000 0, rgba(0, 0, 0, 0.7) 28px, transparent 58px);
+  opacity: calc(0.5 + 0.35 * var(--glass-a, 0.55));
+  mix-blend-mode: normal;
+  transform: none;
+}
+/* The morph dims the wide specular on the tall card; the hotspot position is
+   still driven by the pointer, so the two never drift apart. */
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"])[data-state="open"] .glass-fx__glare {
+  opacity: calc(0.34 + 0.26 * var(--glass-a, 0.55));
+}
+@media (prefers-reduced-motion: reduce) {
+  #island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .glass-fx__glare,
+  #island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .glass-fx__glint { transition: none; }
+}
+
+/* Hover energy: light up the existing rim and hotspot, never add a second
+   glass layer, so geometry and text contrast stay exactly where they were. */
+#island[data-glass-variant][data-hovered="true"] .glass-fx__fresnel { opacity: calc(0.62 + 0.4 * var(--glass-a, 0.55)); }
+#island[data-glass-variant][data-hovered="true"] .glass-fx__glint { filter: brightness(1.25); }
+@media (prefers-reduced-motion: reduce) {
+  #island[data-glass-variant] .glass-fx__fresnel,
+  #island[data-glass-variant] .glass-fx__glint { transition: none; }
+  #island[data-glass-variant][data-hovered="true"] .glass-fx__fresnel { opacity: calc(0.42 + 0.4 * var(--glass-a, 0.55)); }
+  #island[data-glass-variant][data-hovered="true"] .glass-fx__glint { filter: none; }
+}
+
 /* Translucent: the light frosted sibling. Text stays dark-on-light, so the
    tab and row tints flip to dark ink on a milky pane. */
 #island[data-surface="Translucent"] {
   color: #1c2330;
+  /* Smoky neutral glass, deliberately unlike the cool white Liquid frost.
+     The grey base is what makes the difference visible on a pale desktop; a
+     purely transparent pane just turns white there and looks identical. */
   background:
-    linear-gradient(165deg, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0.2) 40%, rgba(255, 255, 255, 0.08) 100%),
-    linear-gradient(0deg, rgba(236, 239, 246, calc(0.34 + 0.5 * var(--glass-a, 0.55))) 0%, rgba(226, 231, 240, calc(0.26 + 0.44 * var(--glass-a, 0.55))) 100%);
+    linear-gradient(165deg, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 0.08) 42%, rgba(120, 130, 145, 0.12) 100%),
+    linear-gradient(0deg, rgba(120, 130, 145, calc(0.42 + 0.34 * var(--glass-a, 0.55))) 0%, rgba(148, 158, 172, calc(0.38 + 0.3 * var(--glass-a, 0.55))) 100%);
+}
+/* Three glass variants, never mixed on one surface. Regular is the legible
+   Liquid glass frost above. Clear keeps more of the desktop showing with a
+   neutral dim field behind text. Candy keeps the same optics as regular but
+   replaces the cool silver base with a rose-tinted sugar finish. */
+#island[data-glass-variant="clear"][data-surface="Translucent"] {
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.24) 0%, rgba(255, 255, 255, 0.06) 42%, rgba(120, 130, 145, 0.16) 100%),
+    linear-gradient(0deg, rgba(120, 130, 145, calc(0.34 + 0.3 * var(--glass-a, 0.55))) 0%, rgba(148, 158, 172, calc(0.3 + 0.26 * var(--glass-a, 0.55))) 100%);
+}
+#island[data-glass-variant="clear"] .panel,
+#island[data-glass-variant="clear"] .row,
+#island[data-glass-variant="clear"] .site { background: rgba(28, 35, 48, 0.08); }
+/* Translucent keeps the same optical layers but drops the cool blue lens:
+   its rim is neutral smoke, so it never reads as a second Liquid glass. */
+#island[data-surface="Translucent"] .glass-fx__refract {
+  background:
+    radial-gradient(120% 100% at 50% 45%, rgba(255, 255, 255, 0) 50%, rgba(35, 42, 56, 0.18) 88%, rgba(24, 30, 40, 0.26) 100%),
+    linear-gradient(to bottom,
+      rgba(255, 255, 255, 0.32) 0%, rgba(180, 188, 200, 0.12) 14%,
+      rgba(0, 0, 0, 0) 32%, rgba(0, 0, 0, 0) 66%,
+      rgba(90, 100, 116, 0.18) 88%, rgba(255, 255, 255, 0.34) 100%);
+}
+#island[data-surface="Translucent"] .glass-fx__dispersion {
+  box-shadow:
+    inset 2px 0 2px -1.5px rgba(120, 130, 145, 0.18),
+    inset -2px 0 2px -1.5px rgba(120, 130, 145, 0.18),
+    inset 0 2px 2px -1.5px rgba(255, 255, 255, 0.16),
+    inset 0 -2px 2px -1.5px rgba(35, 42, 56, 0.2);
+}
+#island[data-surface="Translucent"] .glass-fx__inner {
+  background:
+    radial-gradient(circle at 8% 8%, rgba(255, 255, 255, 0.8) 0%, rgba(180, 188, 200, 0.34) 34%, rgba(255, 255, 255, 0) 60%),
+    radial-gradient(circle at 92% 8%, rgba(255, 255, 255, 0.72) 0%, rgba(180, 188, 200, 0.3) 34%, rgba(255, 255, 255, 0) 60%),
+    radial-gradient(circle at 8% 92%, rgba(255, 255, 255, 0.7) 0%, rgba(160, 170, 184, 0.32) 34%, rgba(255, 255, 255, 0) 60%),
+    radial-gradient(circle at 92% 92%, rgba(255, 255, 255, 0.8) 0%, rgba(180, 188, 200, 0.34) 34%, rgba(255, 255, 255, 0) 60%),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0) 62%, rgba(160, 170, 184, 0.48) 88%, rgba(255, 255, 255, 0.7) 100%);
+}
+#island[data-glass-variant="candy"] .glass-fx__refract {
+  background:
+    radial-gradient(120% 100% at 50% 45%, rgba(255, 255, 255, 0) 50%, rgba(214, 92, 142, 0.24) 88%, rgba(180, 60, 116, 0.34) 100%),
+    linear-gradient(to bottom,
+      rgba(255, 255, 255, 0.7) 0%, rgba(255, 205, 226, 0.28) 14%,
+      rgba(0, 0, 0, 0) 32%, rgba(0, 0, 0, 0) 66%,
+      rgba(255, 166, 204, 0.24) 88%, rgba(255, 255, 255, 0.6) 100%);
+}
+#island[data-glass-variant="candy"] .glass-fx__inner {
+  background:
+    radial-gradient(circle at 8% 8%, rgba(255, 255, 255, 1) 0%, rgba(255, 160, 200, 0.62) 34%, rgba(255, 255, 255, 0) 60%),
+    radial-gradient(circle at 92% 8%, rgba(255, 255, 255, 0.95) 0%, rgba(255, 174, 210, 0.55) 34%, rgba(255, 255, 255, 0) 60%),
+    radial-gradient(circle at 8% 92%, rgba(255, 255, 255, 0.92) 0%, rgba(255, 150, 195, 0.58) 34%, rgba(255, 255, 255, 0) 60%),
+    radial-gradient(circle at 92% 92%, rgba(255, 255, 255, 1) 0%, rgba(255, 160, 200, 0.62) 34%, rgba(255, 255, 255, 0) 60%),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0) 62%, rgba(255, 196, 222, 0.8) 88%, rgba(255, 255, 255, 0.95) 100%);
 }
 #island[data-surface="Liquid glass"] #open,
-#island[data-surface="Translucent"] #open {
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) #open {
   background: transparent;
 }
 #island[data-surface="Liquid glass"] .tabs,
-#island[data-surface="Translucent"] .tabs { border-bottom-color: rgba(255, 255, 255, 0.18); }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .tabs { border-bottom-color: rgba(255, 255, 255, 0.18); }
 #island[data-surface="Liquid glass"] .tab:hover,
-#island[data-surface="Translucent"] .tab:hover { background: rgba(255, 255, 255, 0.18); }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .tab:hover { background: rgba(255, 255, 255, 0.18); }
 #island[data-surface="Liquid glass"] .row,
 #island[data-surface="Liquid glass"] .site,
-#island[data-surface="Liquid glass"] .music-card { background: rgba(255, 255, 255, 0.09); border-color: rgba(255, 255, 255, 0.16); }
-#island[data-surface="Translucent"] .row,
-#island[data-surface="Translucent"] .site,
-#island[data-surface="Translucent"] .music-card { background: rgba(255, 255, 255, 0.42); border-color: rgba(28, 35, 48, 0.1); }
+#island[data-surface="Liquid glass"] .music-card { background: rgba(255, 255, 255, 0.5); border-color: rgba(28, 35, 48, 0.12); }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .row,
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .site,
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .music-card { background: rgba(255, 255, 255, 0.42); border-color: rgba(28, 35, 48, 0.1); }
 /* Dark ink pass: the pane is milky, so every explicit light-grey text and
    icon colour flips to ink for contrast. */
-#island[data-surface="Translucent"] #clock,
-#island[data-surface="Translucent"] .battery,
-#island[data-surface="Translucent"] #open,
-#island[data-surface="Translucent"] .panel,
-#island[data-surface="Translucent"] .tab { color: #232a38; }
-#island[data-surface="Translucent"] .tab:hover { color: #10141c; }
-#island[data-surface="Translucent"] .empty { color: #5a6373; }
-#island[data-surface="Translucent"] .panel :is(.title, .text, .ph-left span, .ph-left strong) { color: #232a38; }
-#island[data-surface="Translucent"] .panel :is(input, select, textarea) { color: #10141c; }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) #clock,
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .battery,
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) #open,
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .panel,
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .tab { color: #232a38; }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .tab:hover { color: #10141c; }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .empty { color: #4f5866; }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .panel :is(.title, .text, .ph-left span, .ph-left strong) { color: #232a38; }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .panel :is(input, select, textarea) { color: #10141c; }
 
-/* Liquid glass secondary ink. The shared muted grey (#a3aabd) was picked for
-   the near black surfaces; on the glass pane the white sheen lifts the base by
-   roughly 20/255, so 8.5 px secondary text fell to ~3.1:1 over a light desktop.
-   Only the glass surface is lifted here, every other surface keeps #a3aabd. */
-#island[data-surface="Liquid glass"] .music-meta span,
-#island[data-surface="Liquid glass"] .music-times,
-#island[data-surface="Liquid glass"] .lyric-empty,
-#island[data-surface="Liquid glass"] .lyric-line:not(.active),
-#island[data-surface="Liquid glass"] .row .time,
-#island[data-surface="Liquid glass"] .row-head,
-#island[data-surface="Liquid glass"] .stat i,
-#island[data-surface="Liquid glass"] .hint,
-#island[data-surface="Liquid glass"] .empty,
-#island[data-surface="Liquid glass"] .cal-agenda span { color: #dde2ec; }
-/* The active lyric line keeps the user accent, but #6ea8ff only reaches 4.43:1
-   once the sheen is painted under the glyph. Mixed 20% toward white: same hue,
-   enough luminance to clear AA. */
-#island[data-surface="Liquid glass"] .lyric-line.active {
-  color: color-mix(in srgb, var(--accent) 80%, #ffffff);
+/* Secondary ink on the light panes.
+   This block used to LIFT these greys (#dde2ec) because the glass pane was a
+   dark slate and #a3aabd sank to ~3.1:1 on it. The pane is a light frost now,
+   so the same list needs the opposite treatment: one dark secondary grey that
+   holds AA on both the lightest and the darkest wallpaper the material can
+   produce. #4a5364 measures 6.7:1 on the lightest pill and 5.3:1 on the
+   darkest, so it is not tuned to one wallpaper. */
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) :is(.music-meta span, .music-times, .lyric-empty, .lyric-line:not(.active), .row .time, .row-head, .cc-cell i, .hint, .empty, .cal-agenda span) { color: #4a5364; }
+
+/* Primary ink for the pieces that never had a light-pane override: the pill
+   track title, the media clock and the music title were still painted with the
+   dark-design whites, which measured 1.0-1.2:1 on the frost.
+   The media clock is a step darker than the other secondary ink (#3a4354 vs
+   #4a5364): it sits on the pill, which is the thinnest pane in the product and
+   therefore the one that loses most lightness over a black wallpaper. At
+   #4a5364 it measured 5.26:1 there; a 6.0:1 bar needs the extra step. */
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .media-text { color: #1c2330; }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"])[data-media="true"] #clock { color: #3a4354; }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .music-meta strong { color: #10141c; }
+
+/* The mini notch strip is the same island element, so it gets the same frost -
+   but its readouts were still the dark-design near-whites (#e9eef7 clock,
+   #b6bdcc date). On the light material the notch clock measured ~1.1:1: the
+   number was there, just invisible. The notch is only 14px tall, so it needs
+   the full-strength primary ink, not the softer secondary grey. */
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .mini-clock { color: #1c2330; }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .mini-date { color: #4a5364; }
+
+/* Optional SVG experiment, ported from rdev/liquid-glass-react (MIT).
+   Default off. It displaces only this layer's own pixels; a DOM filter cannot
+   sample the OS desktop behind a transparent Electron window. */
+#island[data-glass-experiment="on"] .glass-fx__refract { filter: url(#r7-liquid); }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"])
+  :is(#clock, .mini-clock, .mini-date, .title, .text, .lyric-line) { user-select: text; }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"])
+  :is(.tab, button):focus-visible { outline: 2px solid #1c2330; outline-offset: 1px; }
+
+/* ---- Card controls and chips on the light panes ----
+   The card's control language was built for a dark slate: white-alpha borders
+   (rgba(255,255,255,0.1)) for the edges, white-alpha fills for hover, and
+   #b6bdcc/#a3aabd/#c3cbd9 for the ink. On the frost every one of those is
+   wrong in the same direction - white alpha over white is invisible, and a
+   #b6bdcc label on a #fbfcfd pane measures 1.8:1. A whole-panel sweep found 63
+   elements below AA, mostly here; the water panel read as an empty box with
+   faint smudges where its steppers should be.
+   The inversion is systematic, not per-element: white-alpha surfaces become
+   ink-alpha surfaces, and the three grey steps become three dark steps that
+   keep the same hierarchy (primary / secondary / action). */
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) :is(.chip, .clip-act, .notice-reply-toggle, .notice-reply-send, .mt-btn) {
+  color: #434c5c;
+  border-color: rgba(35, 42, 56, 0.22);
+}
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) :is(.chip, .clip-act, .notice-reply-toggle, .notice-reply-send, .mt-btn):hover {
+  background: rgba(35, 42, 56, 0.07);
+  color: #10141c;
+}
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .chip.active {
+  background: rgba(35, 42, 56, 0.12);
+  color: #10141c;
+}
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .link { color: #434c5c; }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .link:hover { color: #10141c; }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .tabs-clock { color: #3a4354; }
+
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .state-badge {
+  background: rgba(35, 42, 56, 0.07);
+  color: #434c5c;
+  border-color: rgba(35, 42, 56, 0.16);
+}
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .kbd {
+  background: rgba(35, 42, 56, 0.06);
+  color: #434c5c;
+  border-color: rgba(35, 42, 56, 0.16);
+}
+/* A dark #121318 select on a white pane is a hole in the layout, not a control. */
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .select {
+  background: #ffffff;
+  color: #10141c;
+  border-color: rgba(35, 42, 56, 0.2);
+}
+/* Same for the text inputs. The ink override further up already set the colour
+   to #10141c, which on the untouched #121318 field was black-on-black: the
+   "Add a task" box read as an empty black rectangle with invisible typing. */
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) :is(.site-form input, .field input, input[type="text"], input[type="time"], input[type="number"], textarea) {
+  background: #ffffff;
+  color: #10141c;
+  border-color: rgba(35, 42, 56, 0.2);
+}
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) :is(.site-form input, .field input, input[type="text"], textarea)::placeholder { color: #6b7382; }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .site-form .field span { color: #4f5866; }
+
+/* Steppers (water / timer): the three parts all carried dark-pane surfaces. */
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .stepper {
+  background: rgba(255, 255, 255, 0.5);
+  border-color: rgba(35, 42, 56, 0.12);
+}
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .stepper > span { color: #4f5866; }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .stepper b { color: #10141c; }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .stepper button {
+  background: rgba(255, 255, 255, 0.85);
+  border-color: rgba(35, 42, 56, 0.2);
+  color: #2b3444;
+}
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .stepper button:hover { background: rgba(35, 42, 56, 0.1); }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .sound-toggle { color: #3a4354; }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) #waterText { color: #10141c; }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .water-track { background: rgba(35, 42, 56, 0.12); }
+
+/* Calendar */
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .cal-cell { color: #1c2330; }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .cal-cell:hover { background: rgba(35, 42, 56, 0.07); }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .cal-cell.muted { color: #4f5866; }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .cal-cell.holiday { color: #b3261e; }
+/* "Today" is the one cell tinted with the accent; on a light pane the accent
+   has to be clamped the same way the active lyric is, or the default #e9eef7
+   paints white-on-white. */
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .cal-cell.today {
+  color: oklch(from var(--accent) 0.42 c h);
+  border-color: oklch(from var(--accent) 0.42 c h);
+}
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .cal-agenda {
+  background: rgba(35, 42, 56, 0.045);
+  border-color: rgba(35, 42, 56, 0.1);
+}
+
+/* Rows, tiles and drop targets: white-alpha fills read as nothing on white. */
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) :is(.row, .notice, .clip, .site, .shelf-item, .cap-tile, .drop) {
+  background: rgba(255, 255, 255, 0.5);
+  border-color: rgba(35, 42, 56, 0.1);
+}
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) :is(.row, .notice, .clip, .site, .shelf-item) :is(.name, .title) { color: #1c2330; }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) :is(.url, .cap-tile span, #dropZone) { color: #4f5866; }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .cap-tile { color: #1c2330; }
+
+/* Pieces the first pass still missed: bare <strong>s, the calendar arrows, the
+   prayer cells, the service buttons and the dashed add tile. */
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) :is(.cal-agenda strong, .cal-nav strong) { color: #1c2330; }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .cal-week span { color: #4f5866; }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .iconbtn {
+  background: rgba(255, 255, 255, 0.72);
+  border-color: rgba(35, 42, 56, 0.18);
+  color: #2b3444;
+}
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .iconbtn:hover { background: rgba(35, 42, 56, 0.1); }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .pray-cell {
+  background: rgba(255, 255, 255, 0.5);
+  border-color: rgba(35, 42, 56, 0.1);
+}
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .pray-cell span { color: #4f5866; }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .pray-cell b { color: #10141c; }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .pray-cell.next { background: rgba(70, 224, 220, 0.22); border-color: rgba(24, 160, 156, 0.5); }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .pray-cell.next b { color: #0f5f5c; }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .svc-bar button { color: #1c2330; }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .site.add {
+  color: #434c5c;
+  border-color: rgba(35, 42, 56, 0.24);
+}
+/* Bare buttons that carry no chip/link class: the task form's submit and the
+   service buttons in Calls. They inherit the panel's near-white ink. */
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) :is(.site-form button, .grid2 button) { color: #1c2330; }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .field span { color: #4f5866; }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) :is(.pray-city, .pray-foot > span) { color: #4f5866; }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) #prayDate { color: #4f5866; }
+/* The alarm button is an amber chip: its #ffcf9c label is amber-on-amber once
+   the chip sits on a light pane (1.09:1). Dark brown keeps the warm identity
+   and clears AA. */
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .alarm-btn { color: #5a3410; }
+
+/* The active lyric line carries the user accent so it stands out from the idle
+   lines above and below it.
+   On the LIGHT panes the accent has to lose LIGHTNESS, not gain it. The old
+   rule here mixed the accent 20% toward white - correct when the pane was a
+   dark slate, catastrophic now: the default accent is #e9eef7, so the active
+   line became near-white glyphs on a near-white pane and measured 1.79:1.
+   Mixing toward black would fix the luminance but grey the hue out, so clamp
+   the oklch lightness instead and keep chroma + hue intact: #6ea8ff stays a
+   clearly blue accent, #e9eef7 becomes the dark neutral it has to be.
+   0.42, not 0.46: at 0.46 the line measured exactly 4.5:1 on the pill over a
+   near-black wallpaper, i.e. on the AA line with zero margin for a darker
+   photo. 0.42 buys ~5.3:1 there and 8.5:1 on the light pane. */
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .lyric-line.active {
+  color: #333c4b; /* fallback if relative colour syntax is unavailable */
+  color: oklch(from var(--accent) 0.42 c h);
 }
 
 #island[data-accent="#ffffff"] { --accent: #ffffff; }
@@ -269,6 +820,9 @@ input:disabled {
   align-items: center;
   justify-content: center;
   flex: none;
+  /* The greeting cat is an absolute overlay over the pill. It must never be a
+     pointer target, or the first 1.5 s would swallow clicks on the island. */
+  pointer-events: none;
 }
 .cat { width: 100%; height: 100%; overflow: visible; }
 .cat-ear,
@@ -501,7 +1055,10 @@ input:disabled {
 }
 /* A playing track needs the full right side, so the cat returns to the left
    rail and the clock becomes the trailing flex item. */
-#island[data-media="true"] #pill { padding-left: 30px; }
+/* The cat is an absolute overlay pinned at left:8px with a 22px width, so its
+   right edge lands at ~30px. The clock used to start at padding-left:30px and
+   sat flush against (in fact slightly under) the cat. Give it a real gap. */
+#island[data-media="true"] #pill { padding-left: 42px; }
 #island[data-media="true"] #pill .cat-slot { left: 8px; right: auto; transform: translateY(-50%); }
 #island[data-media="true"] #clock {
   position: static;
@@ -511,12 +1068,10 @@ input:disabled {
   color: #b6bdcc;
 }
 
-/* On the glass surface the sheen lifts the base under the glyph, so the dimmed
-   media clock (#b6bdcc) measured 5.38:1 median and 4.44:1 at the lightest ring
-   pixel. Lifted only for the media pill on glass; the idle clock already
-   inherits the full #f2f5ff. Declared after the data-media rule on purpose:
-   same specificity, so source order decides which one wins. */
-#island[data-surface="Liquid glass"][data-media="true"] #clock { color: #e6eaf2; }
+/* The media clock on the glass surfaces is handled by the light-pane ink block
+   further up (#4a5364). The old #e6eaf2 lift was written for the dark slate and
+   would now sit at 1.1:1 on the frost, so it is gone rather than overridden:
+   two rules fighting over the same property is how this got missed. */
 
 .media-text {
   overflow: hidden;
@@ -524,8 +1079,21 @@ input:disabled {
   font-size: 10px;
   font-weight: 600;
   color: #e7edf9;
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 7px, #000 calc(100% - 7px), transparent);
-  mask-image: linear-gradient(90deg, transparent, #000 7px, #000 calc(100% - 7px), transparent);
+}
+/* The edge fade exists so a SCROLLING marquee does not hard-cut mid glyph. It
+   used to be applied unconditionally at 7px, which on the pill is a bug: the
+   title area is only ~56px wide, so 14 of those pixels were semi transparent
+   and the leading character lived permanently inside the fade - the pill read
+   "avi Rao -" instead of "Kavi Rao -". 4px keeps the soft edge without eating
+   a glyph, and a title that fits needs no fade at all (data-scroll="false"),
+   where the mask only dimmed the last real characters for nothing. */
+.media-text[data-scroll="true"] {
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 4px, #000 calc(100% - 4px), transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 4px, #000 calc(100% - 4px), transparent);
+}
+.media-text[data-scroll="false"] {
+  -webkit-mask-image: none;
+  mask-image: none;
 }
 .media-track { display: inline-block; white-space: pre; }
 .media-text[data-scroll="true"] .media-track {
@@ -874,28 +1442,185 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .toggles button,
 .grid2 button { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.slider { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; font-size: 10px; color: #a3aabd; }
-.slider span { width: 52px; flex: none; }
-.slider input { flex: 1; min-width: 0; accent-color: var(--accent); }
+/* ---- Control Centre (macOS layout) ----
+   Left: two vertical wells, brightness over volume. Right: a 2x2 tile grid
+   with one wide Mute tile. Bottom: a single segmented strip that carries live
+   CPU, live RAM and the Clear RAM action, in the slot where the reference puts
+   Battery / Balanced / Performance. The strip is one rounded pill split by
+   hairlines, so the three cells read as segments rather than three buttons. */
+.cc { display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 8px; }
+.cc-sliders { display: flex; gap: 6px; }
+.cc-well {
+  --cc-rail: 66px;
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  height: 118px; padding: 8px 0 7px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.075);
+}
+.cc-well-icon {
+  width: 14px; height: 14px; flex: none;
+  fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round;
+  color: #dfe6f2;
+}
+.cc-well-val { font-size: 8.5px; font-weight: 700; color: #c6cedd; font-variant-numeric: tabular-nums; }
+/* Vertical slider: a drawn rail and thumb, with the native input on top.
+   The input stays in the DOM for keyboard, ARIA and drag behaviour, but it is
+   fully transparent and the two visible pieces are plain elements. Every
+   layout question is then answerable: the rail is centred with a negative
+   half-width, and the thumb is centred on the rail's centre line by the same
+   rule, so they cannot disagree. The native input itself must still be
+   VERTICAL: a horizontal range in this 15x66 box ignores vertical dragging,
+   so its value never moves. Its UA thumb is invisible and its alignment no
+   longer matters, because the visible thumb is drawn from --cc-pct. */
+.cc-range-wrap {
+  position: relative;
+  flex: none;
+  width: 15px;
+  height: var(--cc-rail, 66px);
+  --cc-pct: 50;
+}
+/* The rail is inset by half a thumb at both ends, so the thumb's centre can
+   reach each end while the circle itself stays inside the well instead of
+   hanging over the value label. */
+.cc-rail {
+  position: absolute;
+  top: 7.5px;
+  bottom: 7.5px;
+  left: 50%;
+  width: 6px;
+  margin-left: -3px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.26);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+  pointer-events: none;
+}
+/* translateY(50%) puts the thumb's CENTRE on the `bottom` offset, so the travel
+   is (100% - 15px) starting from the half-thumb inset: value 0 lands exactly on
+   the rail's bottom end, value 100 exactly on its top end. */
+.cc-thumb {
+  position: absolute;
+  left: 50%;
+  bottom: calc(7.5px + (100% - 15px) * var(--cc-pct) / 100);
+  width: 15px;
+  height: 15px;
+  margin-left: -7.5px;
+  transform: translateY(50%);
+  border-radius: 50%;
+  background: #f7f9ff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.32);
+  pointer-events: none;
+}
+.cc-range {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+  /* Vertical hit testing: without this the transparent input stays horizontal
+     and only responds to a 15px-wide sideways drag. */
+  writing-mode: vertical-rl;
+  /* RTL puts the minimum at the bottom, matching the drawn thumb and the
+     brightness/volume convention (up = more). */
+  direction: rtl;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.cc-range:disabled { cursor: not-allowed; }
+.cc-range:disabled ~ .cc-thumb { opacity: 0.5; }
+.cc-range:focus-visible ~ .cc-thumb { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.cc-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 1fr; gap: 6px; }
+.cc-tile {
+  display: flex; align-items: center; gap: 6px;
+  min-width: 0; padding: 0 9px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.07);
+  color: #e7edf9; font: inherit; font-size: 10px; font-weight: 600;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
+}
+.cc-tile svg {
+  width: 14px; height: 14px; flex: none;
+  fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
+  color: #dfe6f2;
+}
+.cc-tile-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cc-tile:hover { background: rgba(255, 255, 255, 0.13); }
+.cc-tile:active { transform: scale(0.97); }
+.cc-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cc-tile-wide { grid-column: 1 / -1; }
+
+.cc-strip {
+  display: grid; grid-template-columns: 1fr 1fr 1.15fr;
+  margin-top: 7px;
+  border-radius: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.055);
+  overflow: hidden;
+}
+.cc-cell {
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  min-width: 0; height: 26px;
+  font-size: 9.5px; color: #c6cedd;
+}
+.cc-cell + .cc-cell { border-left: 1px solid rgba(255, 255, 255, 0.1); }
+.cc-cell b { font-size: 10.5px; font-weight: 700; color: #eef2fa; font-variant-numeric: tabular-nums; }
+.cc-cell i { font-style: normal; font-size: 8px; letter-spacing: 0.04em; text-transform: uppercase; color: #a3aabd; }
+.cc-action {
+  border: 0; background: transparent;
+  font: inherit; font-size: 9.5px; font-weight: 700; color: #eef2fa;
+  cursor: pointer;
+}
+.cc-action:hover { background: rgba(255, 255, 255, 0.1); }
+.cc-action:active { background: rgba(255, 255, 255, 0.16); }
+.cc-action:disabled { opacity: 0.6; cursor: not-allowed; }
+.cc-action:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* ---- Control Centre on the light Translucent pane ----
+   Every .cc-* colour above is tuned for the dark surfaces. On the milky
+   Translucent pane those near-white labels sat on white and vanished, so the
+   whole panel read as empty boxes. Same layout, ink inverted. */
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .cc-well {
+  background: rgba(255, 255, 255, 0.58);
+  border-color: rgba(35, 42, 56, 0.14);
+}
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .cc-well-icon { color: #2b3444; }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .cc-well-val { color: #3a4353; }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .cc-rail {
+  background: rgba(35, 42, 56, 0.2);
+  box-shadow: inset 0 0 0 1px rgba(35, 42, 56, 0.1);
+}
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .cc-thumb {
+  background: #ffffff;
+  box-shadow: 0 0 0 1px rgba(35, 42, 56, 0.2), 0 1px 3px rgba(0, 0, 0, 0.22);
+}
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .cc-tile {
+  background: rgba(255, 255, 255, 0.62);
+  border-color: rgba(35, 42, 56, 0.14);
+  color: #1c2330;
+}
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .cc-tile svg { color: #2b3444; }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .cc-tile:hover { background: rgba(255, 255, 255, 0.88); }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .cc-strip {
+  background: rgba(255, 255, 255, 0.58);
+  border-color: rgba(35, 42, 56, 0.14);
+}
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .cc-cell { color: #2b3444; }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .cc-cell b { color: #10141c; }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .cc-cell i { color: #4f5866; }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .cc-cell + .cc-cell { border-left-color: rgba(35, 42, 56, 0.14); }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .cc-action { color: #10141c; }
 
 .hint { margin-top: 5px; font-size: 9px; line-height: 1.45; color: #a3aabd; }
 .empty { padding: 8px 2px; font-size: 9.5px; line-height: 1.5; color: #a3aabd; }
 
 .site-form[hidden] { display: none; }
 
-.stats {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 5px 0 6px;
-  padding: 4px 7px;
-  border-radius: 7px;
-  background: rgba(255, 255, 255, 0.03);
-}
-.stat { display: flex; flex-direction: column; min-width: 62px; }
-.stat b { font-size: 11px; font-weight: 700; color: #e7edf9; font-variant-numeric: tabular-nums; }
-.stat i { font-size: 8.5px; font-style: normal; color: #a3aabd; }
-#cleanRam { margin-left: auto; }
 
 .mt6 { margin-top: 5px; }
 
@@ -1126,6 +1851,11 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 /* Same reveal rule as the island body: a hidden-until-hover island must not
    leave the capsules floating on their own. */
 #island[data-hidden="true"][data-hovered="false"]:not([data-state="open"]) + #micPill { opacity: 0; }
+/* The capsules deliberately stay put while a banner shows. Hiding them here
+   looked tidy but fired for every notice, not just the hint the capsule itself
+   raised, and it silently blanked the Mic/Cam row the moment any notification
+   arrived. A wide banner plus two capsules reads fine; a missing control does
+   not. */
 .meeting-mic {
   display: flex;
   align-items: center;
@@ -1141,7 +1871,9 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   font: inherit;
   font-size: 12px;
   font-weight: 600;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 4px 12px rgba(0, 0, 0, 0.35);
+  /* 36 px tall inside a 39 px window: an outer shadow has nowhere to fall,
+     so it was clipped into a hard edge under each capsule. */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), inset 0 -1px 0 rgba(0, 0, 0, 0.35);
 }
 .meeting-cam {
   display: flex;
@@ -1158,7 +1890,9 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   font: inherit;
   font-size: 12px;
   font-weight: 600;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 4px 12px rgba(0, 0, 0, 0.35);
+  /* 36 px tall inside a 39 px window: an outer shadow has nowhere to fall,
+     so it was clipped into a hard edge under each capsule. */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), inset 0 -1px 0 rgba(0, 0, 0, 0.35);
 }
 .meeting-cam svg { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; }
 .meeting-cam .cam-label { color: #d3e6fb; }
@@ -1199,6 +1933,25 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   50% { box-shadow: 0 0 0 4px rgba(255, 159, 10, 0); }
 }
 
+/* Reserved strip for hints while the card is open. It is in normal flow so
+   the panels move down instead of being painted over by the pill banner. */
+.open-hint:not([hidden]) {
+  flex: none;
+  margin: 0 8px 4px;
+  padding: 4px 8px;
+  border-radius: 7px;
+  background: rgba(35, 42, 56, 0.1);
+  border: 1px solid rgba(35, 42, 56, 0.12);
+  color: #1c2330;
+  font-size: 9px;
+  line-height: 1.3;
+}
+#island:not(:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"], [data-surface="Candy glass"])) .open-hint:not([hidden]) {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #e7edf9;
+}
+
 /* ---- Notice / meeting banner ----
    Overlays the whole pill window while the main process widens it. Meeting
    tone is the green "Meeting mode" card; notice tone is neutral dark.
@@ -1214,7 +1967,10 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   border-radius: 14px;
   background: linear-gradient(0deg, rgba(32, 44, 38, 0.97) 0%, rgba(40, 56, 46, 0.96) 100%);
   border: 1px solid rgba(255, 255, 255, 0.14);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 8px 22px rgba(0, 0, 0, 0.38);
+  /* The banner fills the pill window edge to edge, so an outer shadow would be
+     cut into a rectangle exactly like the island's used to be. Depth comes from
+     the top bevel and the border instead. */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
   animation: banner-in 320ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 #island[data-banner-tone="notice"] #banner {
@@ -1404,8 +2160,8 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
    reads as the album instead of a neutral panel. The #island prefix is
    required: the Liquid glass and Translucent surfaces also set .music-card's
    background with an id selector. Translucent keeps its light pane. */
-#island:not([data-surface="Translucent"]) .music-card[data-bg="album"][data-dynamic="true"],
-#island:not([data-surface="Translucent"]) .music-card[data-bg="album"][data-dynamic="fallback"] {
+#island:not(:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"])) .music-card[data-bg="album"][data-dynamic="true"],
+#island:not(:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"])) .music-card[data-bg="album"][data-dynamic="fallback"] {
   background:
     radial-gradient(130% 130% at 6% -10%,
       color-mix(in srgb, var(--mc-1, #8a3b2a) 92%, transparent), transparent 68%),
@@ -1417,17 +2173,17 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
       #0b0d12 100%);
   box-shadow: 0 10px 34px color-mix(in srgb, var(--mc-1, #8a3b2a) 28%, transparent);
 }
-#island:not([data-surface="Translucent"]) .music-card[data-bg="album"][data-dynamic="true"] .music-art,
-#island:not([data-surface="Translucent"]) .music-card[data-bg="album"][data-dynamic="fallback"] .music-art {
+#island:not(:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"])) .music-card[data-bg="album"][data-dynamic="true"] .music-art,
+#island:not(:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"])) .music-card[data-bg="album"][data-dynamic="fallback"] .music-art {
   background: linear-gradient(160deg,
     var(--mc-1, #8a3b2a), var(--mc-2, #6b2350) 70%, var(--mc-3, #241436));
 }
 /* Local scrim only behind the two text rows, so the coloured glow stays
    visible everywhere else on the card. */
-#island:not([data-surface="Translucent"]) .music-card[data-dynamic="true"] .music-now,
-#island:not([data-surface="Translucent"]) .music-card[data-dynamic="fallback"] .music-now,
-#island:not([data-surface="Translucent"]) .music-card[data-dynamic="true"] .music-times,
-#island:not([data-surface="Translucent"]) .music-card[data-dynamic="fallback"] .music-times {
+#island:not(:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"])) .music-card[data-dynamic="true"] .music-now,
+#island:not(:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"])) .music-card[data-dynamic="fallback"] .music-now,
+#island:not(:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"])) .music-card[data-dynamic="true"] .music-times,
+#island:not(:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"])) .music-card[data-dynamic="fallback"] .music-times {
   background: linear-gradient(90deg, rgba(6, 8, 12, 0.28), rgba(6, 8, 12, 0));
   border-radius: 8px;
 }

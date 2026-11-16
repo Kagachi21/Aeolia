@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -7,7 +7,15 @@ import { join } from 'node:path';
    The capture endpoint's IAudioEndpointVolume::SetMute is the only supported
    switch; it lives behind COM, so a small PowerShell helper (C# interop,
    compiled once to %TEMP%) does the call. Every failure path returns null so
-   the button can show an honest "unknown" state instead of a lie. */
+   the button can show an honest "unknown" state instead of a lie.
+
+   Windows keeps THREE default capture endpoints per device: eConsole (0),
+   eMultimedia (1) and eCommunications (2). Voice chat - Discord, Teams, Zoom,
+   any WASAPI VoIP client - opens the eCommunications default. The first
+   version of this helper only ever touched eConsole, so on a machine where the
+   two defaults differ the island muted a device Discord never read: the pill
+   changed colour and the call kept transmitting. All three roles are written
+   now, and the state is read back from eCommunications first. */
 
 const CSHARP = `
 using System;
@@ -45,11 +53,11 @@ public class MicMute {
     int GetMute(out bool mute);
   }
 
-  private static IAudioEndpointVolume Volume() {
+  private static IAudioEndpointVolume Volume(int role) {
     var en = (IMMDeviceEnumerator)new MMDeviceEnumeratorComObject();
     IMMDevice dev;
-    // dataFlow 1 = capture (microphone), role 0 = console (default device).
-    int hr = en.GetDefaultAudioEndpoint(1, 0, out dev);
+    // dataFlow 1 = capture (microphone), role 0/1/2 = console/multimedia/comms.
+    int hr = en.GetDefaultAudioEndpoint(1, role, out dev);
     if (hr != 0) throw new InvalidOperationException("GetDefaultAudioEndpoint " + hr);
     var iid = typeof(IAudioEndpointVolume).GUID;
     IAudioEndpointVolume vol;
@@ -58,20 +66,29 @@ public class MicMute {
     return vol;
   }
 
-  public static bool IsMuted() {
+  public static bool IsMuted(int role) {
     bool m;
-    int hr = Volume().GetMute(out m);
+    int hr = Volume(role).GetMute(out m);
     if (hr != 0) throw new InvalidOperationException("GetMute " + hr);
     return m;
   }
 
-  public static void SetMuted(bool mute) {
-    int hr = Volume().SetMute(mute, Guid.Empty);
+  public static void SetMuted(bool mute, int role) {
+    int hr = Volume(role).SetMute(mute, Guid.Empty);
     if (hr != 0) throw new InvalidOperationException("SetMute " + hr);
   }
 }
 `.trim();
 
+/* Roles in read priority: communications first, because that is the endpoint a
+   call app actually records from; console last as the broadest fallback.
+
+   Read-First deliberately does NOT return the value it read. A function used in
+   an expression context (if (-not (Read-First))) has its whole output stream
+   consumed by the condition, so "muted=false" printed from inside it vanished
+   and the caller saw an empty reply - which parsed as null and made every click
+   look like a Core Audio failure. It now stashes the state and only returns a
+   boolean; the value is printed by the caller. */
 const PS_SCRIPT = `
 param([string]$Mode, [string]$Dll)
 $ErrorActionPreference = 'Stop'
@@ -80,18 +97,67 @@ ${CSHARP}
 '@
 if (-not (Test-Path $Dll)) { Add-Type -TypeDefinition $src -OutputAssembly $Dll | Out-Null }
 [void][System.Reflection.Assembly]::LoadFrom($Dll)
+$roles = @(2, 1, 0)
+$script:State = $null
+
+function Read-First {
+  foreach ($r in $roles) {
+    try {
+      $script:State = [MicMute]::IsMuted($r)
+      return $true
+    } catch { }
+  }
+  return $false
+}
+
+function Emit-State {
+  if ($script:State -ne $null) {
+    Write-Output ("muted=" + $script:State.ToString().ToLower())
+  } else {
+    Write-Output 'muted=error'
+  }
+}
+
 switch ($Mode) {
-  'get' { Write-Output ("muted=" + [MicMute]::IsMuted().ToString().ToLower()) }
-  'on'  { [MicMute]::SetMuted($true);  Write-Output ("muted=" + [MicMute]::IsMuted().ToString().ToLower()) }
-  'off' { [MicMute]::SetMuted($false); Write-Output ("muted=" + [MicMute]::IsMuted().ToString().ToLower()) }
+  'get' {
+    [void](Read-First)
+    Emit-State
+  }
+  'on' {
+    $touched = $false
+    foreach ($r in $roles) {
+      try { [MicMute]::SetMuted($true, $r); $touched = $true } catch { }
+    }
+    if (-not $touched) { Write-Output 'muted=error'; break }
+    [void](Read-First)
+    Emit-State
+  }
+  'off' {
+    $touched = $false
+    foreach ($r in $roles) {
+      try { [MicMute]::SetMuted($false, $r); $touched = $true } catch { }
+    }
+    if (-not $touched) { Write-Output 'muted=error'; break }
+    [void](Read-First)
+    Emit-State
+  }
 }
 `.trim();
 
-const scriptPath = (): string => join(tmpdir(), 'aeolia-micmute.ps1');
-const dllPath = (): string => join(tmpdir(), 'aeolia-micmute.dll');
+/* Versioned file names on purpose. The helper compiles once to %TEMP%, so a
+   v1 DLL left over from an older build would be loaded and every call to the
+   new role-aware API would throw MissingMethodException. Bumping the version
+   guarantees the new assembly is the one that gets built. */
+const HELPER_VERSION = 'v3';
+const scriptPath = (): string => join(tmpdir(), `aeolia-micmute-${HELPER_VERSION}.ps1`);
+const dllPath = (): string => join(tmpdir(), `aeolia-micmute-${HELPER_VERSION}.dll`);
 
+/** Rewrites the script when its content changed, not only when it is missing:
+    an upgraded build must never reuse last version's helper. */
 function ensureScript(): void {
-  if (!existsSync(scriptPath())) writeFileSync(scriptPath(), PS_SCRIPT, 'utf8');
+  const target = scriptPath();
+  if (existsSync(target) && readFileSync(target, 'utf8') === PS_SCRIPT) return;
+  writeFileSync(target, PS_SCRIPT, 'utf8');
 }
 
 export type MuteExecutor = (mode: 'get' | 'on' | 'off') => Promise<string>;

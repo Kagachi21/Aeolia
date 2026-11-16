@@ -49,6 +49,7 @@ let activeInfo = {
 let busyProcess = false;
 let idleSeconds = 0;
 let clipText = '';
+let meetingNow = false;
 
 const sent = [];
 const ignoreCalls = [];
@@ -181,7 +182,7 @@ const electronMock = {
 };
 
 const stubs = {
-  activeWindow: { getActiveWindow: () => ({ ...activeInfo }), isBusyProcess: () => busyProcess },
+  activeWindow: { getActiveWindow: () => ({ ...activeInfo }), isBusyProcess: () => busyProcess, BROWSERS: new Set(), browserShouldShrink: () => false, browserTabCount: () => 0 },
   thinFrame: { dropThickFrame: () => {} },
   media: { readMedia: () => ({ playing: false, title: '' }) },
   power: { readPower: () => ({ percent: 80, charging: false }) },
@@ -202,7 +203,7 @@ const stubs = {
     disposeExtras: () => {},
     getExtras: () => ({ meeting: false, meetingApp: '', online: true, weather: null, weatherError: '',
       calendarEvents: [], calendarError: '', lastDownload: '', resumeOffer: false }),
-    isMeeting: () => false, openPath: () => {},
+    isMeeting: () => meetingNow, openPath: () => {},
     pickFile: () => Promise.resolve(''), pickFolder: () => Promise.resolve(''),
     registerExtras: (cb) => { extrasCallbacks = cb; },
     shouldHoldNotice: () => holdNotice,
@@ -415,6 +416,35 @@ async function main() {
   await invoke('settings:set', 'hiddenUntilHover', false);
   toggleCard();  // back to mini
   setFullscreen(false);
+  dropTimers();
+
+  /* BugFix 3: the reserved mic/cam strip belongs to the two capsules, never
+     to the island's hover-to-open zone. Both the geometric exclusion and the
+     renderer's mic-enter signal must suppress the card-open timer. */
+  if (lastStatus()?.state === 'open') toggleCard();  // deterministic pill state
+  setFullscreen(false);
+  settle();
+  dropTimers();
+  meetingNow = true;
+  await invoke('settings:set', 'meetingMicButton', true); // applySettings -> syncMicPill
+  const wide = windows[0].getBounds();
+  dropTimers();
+  hoverAt(100, 700); dropTimers();
+  hoverAt(wide.x + wide.width - 10, wide.y + 5);
+  const armedStrip = pendingTimeouts();
+  check('BugFix3 kursor di strip kapsul tidak memasang timer buka kartu',
+    !armedStrip.includes(333) && !armedStrip.includes(444), JSON.stringify(armedStrip));
+  check('BugFix3 island tetap pill saat kapsul disentuh (kartu tidak keburu terbuka)',
+    lastStatus()?.state === 'pill', `state=${lastStatus()?.state}`);
+  hoverAt(wide.x + 5, wide.y + 5);  // control: hovering the body DOES arm it
+  const armedBody = pendingTimeouts();
+  send('island:pointer', 'mic-enter', 0);
+  check('BugFix3 kontrol: hover badan memasang timer, mic-enter membatalkannya',
+    armedBody.includes(333) && !pendingTimeouts().includes(333),
+    JSON.stringify({ armedBody, after: pendingTimeouts() }));
+  send('island:pointer', 'mic-leave', 0);
+  meetingNow = false;
+  await invoke('settings:set', 'meetingMicButton', true);
   dropTimers();
 
   /* ============================== BUG 4: clipboard text -> clips, never notices */

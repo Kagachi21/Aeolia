@@ -27,3 +27,9 @@ const settingsAssets = join(root, 'dist', 'settings', 'assets');
 mkdirSync(settingsAssets, { recursive: true });
 cpSync(join(root, 'src', 'settings', 'assets', 'robot.svg'), join(settingsAssets, 'robot.svg'));
 console.log('[build] robot asset copied');
+
+// The browser mini trigger reads the live tab count through UI Automation.
+// Ship the helper next to dist/main so the packaged app can find it.
+cpSync(join(root, 'scripts', 'browser-tab-count.ps1'),
+  join(root, 'dist', 'main', 'browser-tab-count.ps1'));
+console.log('[build] browser tab helper copied');

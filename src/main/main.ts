@@ -2,8 +2,10 @@ import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, powerMonitor, s
 import { existsSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { dirname, join } from 'node:path';
-import { getActiveWindow, isBusyProcess } from './activeWindow';
-import { activeDisplay, boundsFor, effectiveScalePct, type IslandState } from './bounds';
+import { BROWSERS, browserShouldShrink, browserTabCount, focusProcessWindow, getActiveWindow, isBusyProcess } from './activeWindow';
+import { activeDisplay, boundsFor, effectiveScalePct, micStripRect,
+  pointInRect, type IslandState } from './bounds';
+import { getActiveCaptureProcesses } from './captureSessions';
 import { Island } from './island';
 import { dropThickFrame } from './thinFrame';
 import { loadSettings, setValue } from './settings';
@@ -14,7 +16,8 @@ import { sendShortcut } from './keys';
 import { fetchLyrics } from './lyrics';
 import { fetchTrackColors, toDeepPalette } from './musicColors';
 import { getMicMuted, toggleMicMute } from './micMute';
-import { camDecision } from './camToggle';
+import { cameraAppFor, camDecision, camResult } from './camToggle';
+import * as noticeLauncher from './noticeLaunch';
 import { brightnessRange, pasteShortcut, setBrightness, toggleMute, volumeStep } from './systemControl';
 import { cleanRam, cpuPercent, memoryInfo } from './ramClean';
 import { registerCapture, disposeCapture } from './capture';
@@ -53,7 +56,15 @@ let zoneInside = false;
 let busyForDelay = false;
 let clickThrough = false;
 let activeIsWord = false;
+/* True while the pointer rests on a Mic/Cam capsule. The capsule strip is
+   inside the pill window, so the cursor poll would otherwise arm hover-open
+   and expand the card before the user's click can reach the button. */
+let micHot = false;
 let mediaPlaying = false;
+/* The renderer owns the 4200 ms notice banner; while it is up the pill must
+   keep its width even if the foreground window turns fullscreen, or the
+   banner gets clipped into the 14 px notch. */
+let bannerActive = false;
 let mediaTitle = '';
 let mediaTimer: NodeJS.Timeout | null = null;
 let clipTimer: NodeJS.Timeout | null = null;
@@ -347,7 +358,9 @@ function syncClickThrough(state: IslandState): void {
     back to the pill state re-apply it. */
 function syncMicPill(): void {
   const s = loadSettings();
-  island?.setMicPill(Boolean(isMeeting()) && s.meetingAuto && s.meetingMicButton);
+  const active = Boolean(isMeeting()) && s.meetingAuto && s.meetingMicButton;
+  if (!active) micHot = false;   // capsule vanished: never leave hover disabled
+  island?.setMicPill(active);
 }
 
 function pollActiveWindow(): void {
@@ -368,18 +381,25 @@ function pollActiveWindow(): void {
     height: display.bounds.height,
   });
 
-  busyForDelay = isBusyProcess(info.process) || info.fullscreen;
+  const browser = BROWSERS.has(info.process);
+  const tabs = browser ? browserTabCount(info.hwnd) : 0;
+  busyForDelay = info.fullscreen || (browser
+    ? browserShouldShrink(info.process, info.title, false, tabs)
+    : isBusyProcess(info.process));
 
   // "off" keeps the full pill even under a fullscreen app; the trigger decides
   // which window conditions are allowed to shrink it to the 14 px notch.
+  // A browser is never busy merely by being a browser: one or two tabs keep
+  // the full island, only a crowded window (or fullscreen) earns the notch.
   const miniOff = settings.miniMode === 'off';
-  let shrinks = info.fullscreen;
-  if (settings.miniTrigger === 'busy') shrinks = info.fullscreen || busyForDelay;
+  let shrinks: boolean;
+  if (browser) shrinks = browserShouldShrink(info.process, info.title, info.fullscreen, tabs);
+  else if (settings.miniTrigger === 'busy') shrinks = info.fullscreen || busyForDelay;
   else if (settings.miniTrigger === 'maximized') shrinks = info.fullscreen || info.maximized;
   else shrinks = info.fullscreen || (settings.slimStrip && info.maximized);
   // A playing track keeps the full pill awake (the notch hides the controls),
   // but a fullscreen app still wins so the island never covers a video.
-  const hide = !miniOff && shrinks && (!mediaPlaying || info.fullscreen);
+  const hide = !miniOff && shrinks && !bannerActive && (!mediaPlaying || info.fullscreen);
   const nextBase: 'mini' | 'pill' = hide ? 'mini' : 'pill';
   island.setBase(nextBase);
 
@@ -436,6 +456,9 @@ function armHover(): void {
 function pollHoverZone(): void {
   if (forcedState) return;               // verification seam must stay pinned
   if (!win || win.isDestroyed() || !island) return;
+  // A hot capsule owns its own hit area: never peek, open or close the card
+  // while the user is aiming at Mic/Cam.
+  if (micHot) { cancelHover(); return; }
   const b = win.getBounds();
   const display = activeDisplay(settings).bounds;
   const p = screen.getCursorScreenPoint();
@@ -452,6 +475,18 @@ function pollHoverZone(): void {
   // The gap only exists when the window is pushed below the screen edge.
   const gapTop = Math.min(b.y, display.y);
   const inGap = p.y >= gapTop && p.y < b.y;
+  // #island gives the rightmost (or leftmost) MIC_PILL_EXTRA px back to the
+  // two capsules. Excluding the whole strip - including the transparent gap
+  // between the buttons - keeps hover-to-open from stealing their clicks.
+  const strip = island.current === 'pill' && island.micPillActive
+    ? micStripRect(b, loadSettings(), true)
+    : null;
+  if (pointInRect(p, strip)) {
+    cancelHover();
+    cancelLeave();
+    zoneInside = false;
+    return;
+  }
   const inside = withinX && (overWindow || inGap);
   // Re-assert the peek on every tick while the cursor rests on the notch: a
   // banner that returns the island to mini must not swallow the expansion.
@@ -476,7 +511,20 @@ function pollHoverZone(): void {
 
 function handleIslandPointer(kind: string): void {
   // Click-through is owned by syncClickThrough(state) via Island.onChange.
-  // Pointer IPC only remains for the reveal effect of hiddenUntilHover.
+  // Pointer IPC only remains for the reveal effect of hiddenUntilHover and for
+  // the capsule hover guard below.
+  if (kind === 'mic-enter') {
+    micHot = true;
+    cancelHover();
+    cancelLeave();
+    zoneInside = false;
+    return;
+  }
+  if (kind === 'mic-leave') {
+    micHot = false;
+    pollHoverZone();
+    return;
+  }
   if (settings.hiddenUntilHover && kind === 'enter') pushStatus();
 }
 
@@ -497,15 +545,17 @@ app.whenReady().then(() => {
       pushStatus();
       broadcast();
     },
-    notice: (app, title, body) => {
+    notice: (app, title, body, aumid) => {
       // Notifications are never held — meeting or not, every notice lands
       // (user spec: "mau sedang meeting atau tidak jangan di hold").
-      pushNotice(app, title, body);
+      pushNotice(app, title, body, aumid);
       broadcast();
     },
     mediaPlaying: () => mediaPlaying,
     // mediaPlayPause() is a toggle, so only fire it when a change is needed.
     pauseMedia: () => { if (mediaPlaying) mediaPlayPause(); },
+    // Live capture sessions are the reliable "Discord voice is on" signal.
+    captureProbe: getActiveCaptureProcesses,
   });
 
   if (process.env.ISLAND_OPEN_SETTINGS === '1') setTimeout(() => openSettingsWindow(), 700);
@@ -514,7 +564,10 @@ app.whenReady().then(() => {
   syncRobotTimer();
 
   ipcMain.on('card:height', (_e, height: number) => island?.setOpenHeight(height));
-  ipcMain.on('banner:show', (_e, active: boolean) => island?.setBanner(Boolean(active)));
+  ipcMain.on('banner:show', (_e, active: boolean) => {
+    bannerActive = Boolean(active);
+    island?.setBanner(bannerActive);
+  });
   // Clicking the small notch expands the island into the open card.
   ipcMain.handle('island:open', () => island?.open());
 
@@ -551,11 +604,23 @@ app.whenReady().then(() => {
   ipcMain.handle('mic:mute-state', () => getMicMuted());
   ipcMain.handle('mic:mute-toggle', () => toggleMicMute());
   ipcMain.handle('cam:toggle', () => {
-    const app = getExtras().meetingApp || '';
-    const focused = getActiveWindow({ x: 0, y: 0, width: 0, height: 0 });
-    const decision = camDecision(app, focused.process || '');
-    if (decision.send) sendShortcut(decision.send);
-    return { ok: Boolean(decision.send), hint: decision.hint ?? '' };
+    const active = getActiveWindow({ x: 0, y: 0, width: 0, height: 0 });
+    const fallback = getExtras().meetingApp || '';
+    const activeApp = cameraAppFor(active.process || fallback, active.title || fallback);
+    // A browser tab with no Meet marker is not a camera target by itself.
+    // Keep the detected meeting app as the fallback so "Zoom not focused"
+    // still reports need-focus instead of "chrome has no shortcut".
+    const app = activeApp === active.process && fallback ? fallback : activeApp;
+    // Google Meet is identified by the tab title, so its resolved name is
+    // the honest focus label. A plain browser window is not: pass the real
+    // foreground process so a background Zoom reports need-focus.
+    const focusedLabel = activeApp !== active.process ? activeApp : active.process;
+    const decision = camDecision(app, focusedLabel);
+    const sent = decision.send ? sendShortcut(decision.send) : false;
+    const bringTarget = BROWSERS.has(active.process) ? active.process : app;
+    const brought = !decision.send && decision.focus && bringTarget
+      ? focusProcessWindow(bringTarget) : false;
+    return camResult(decision, sent, decision.observedFocus || brought);
   });
   // Worship reminders pause the current track; the resume offer plays it again.
   // Both are guarded so a stale click can never invert playback.
@@ -564,43 +629,12 @@ app.whenReady().then(() => {
   ipcMain.on('media:prev', () => mediaPrev());
   ipcMain.on('media:next', () => mediaNext());
 
-  /* Clicking a notification opens the source app. Windows does not expose the
-     sender's process for toast text we scrape, so the app name is matched to
-     its own deep-link protocol; unknown names just fall back to the plain
-     https search so the click is never silently dropped. */
-  const NOTICE_PROTOCOLS: Record<string, string> = {
-    whatsapp: 'whatsapp://',
-    discord: 'discord://',
-    telegram: 'tg://',
-    zoom: 'zoommtg://',
-    teams: 'msteams://',
-    gmail: 'https://mail.google.com',
-    outlook: 'msoutlook://',
-    slack: 'slack://',
-  };
-  const noticeTarget = (appName: string): string | null =>
-    Object.entries(NOTICE_PROTOCOLS).find(([name]) => String(appName || '').toLowerCase().includes(name))?.[1] ?? null;
-  ipcMain.on('notice:open', (_e, appName: string, body: string) => {
-    const target = noticeTarget(appName);
-    if (target) {
-      shell.openExternal(target);
-      return;
-    }
-    if (!loadSettings().noticeOpenLinks) return;
-    const q = encodeURIComponent(String(body || appName || '').slice(0, 60));
-    if (q) shell.openExternal(`https://www.google.com/search?q=${q}`);
-  });
-  /* Direct reply is impossible from a Windows toast we do not own, so the
-     honest flow is: put the typed text on the clipboard and open the chat
-     app; the renderer labels it "teks disalin — tempel di chat". */
-  ipcMain.handle('notice:reply', (_e, appName: string, _body: string, text: string) => {
-    const clean = String(text || '').trim().slice(0, 500);
-    const target = noticeTarget(appName);
-    if (!clean || !target) return { opened: false };
-    clipboard.writeText(clean);
-    shell.openExternal(target);
-    return { opened: true };
-  });
+  /* Both notice actions only open the source app. The launcher reads the
+     setting inside the handler and refuses before resolving any target. */
+  ipcMain.handle('notice:open', (_e, appName: string, body: string, aumid?: string) =>
+    noticeLauncher.open(appName, body, aumid));
+  ipcMain.handle('notice:reply', (_e, appName: string, body: string, text: string, aumid?: string) =>
+    noticeLauncher.reply(appName, body, text, aumid));
 
   ipcMain.handle('stats:get', () => {
     const mem = memoryInfo();

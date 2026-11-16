@@ -68,7 +68,7 @@ const stubs = {
   activeWindow: {
     getActiveWindow: () => ({ process: 'explorer', exe: 'explorer.exe', title: 'QA',
       maximized: false, fullscreen, rect: { x: 0, y: 0, width: 1920, height: 1080 } }),
-    getWindowTitles: () => [], isBusyProcess: () => false,
+    getWindowTitles: () => [], isBusyProcess: () => false, BROWSERS: new Set(), browserShouldShrink: () => false, browserTabCount: () => 0,
   },
   media: { readMedia: () => ({ playing: false, title: '' }) },
   power: { readPower: () => ({ percent: 80, charging: false }) },

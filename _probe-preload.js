@@ -128,6 +128,24 @@ contextBridge.exposeInMainWorld('api', {
   onCaptureHotkey: noopReg('captureHotkey'),
   openCaptureFolder: () => {},
   notify: (t, b) => record('notify', { t, b }),
+
+  /* Channels the renderer subscribes to or invokes that this stub was missing.
+     onLyricsAuto is called at MODULE TOP LEVEL in renderer.ts, so a missing
+     stub threw "window.api.onLyricsAuto is not a function" during boot and took
+     every later assertion in the UI probe down with it (8/20 instead of 20/20).
+     A stub that is narrower than the real preload turns a harness gap into a
+     phantom product regression, so it is kept in sync with preload.ts. */
+  onLyricsAuto: noopReg('lyricsAuto'),
+  onMusicColors: noopReg('musicColors'),
+  bannerShow: (active) => record('bannerShow', active),
+  islandOpen: async () => { record('islandOpen', null); return { ok: true }; },
+  micMuteState: async () => ({ muted: false, supported: true }),
+  micMuteToggle: async () => { record('micMuteToggle', null); return { ok: true, muted: true }; },
+  camToggle: async () => { record('camToggle', null); return { ok: true, focused: false, shortcut: false }; },
+  noticeReply: async (app, body, text) => { record('noticeReply', { app, body, text }); return { ok: true }; },
+  prevMedia: () => record('prevMedia', null),
+  nextMedia: () => record('nextMedia', null),
+  openNotice: (app, body) => record('openNotice', { app, body }),
 });
 
 contextBridge.exposeInMainWorld('settingsApi', {

@@ -29,6 +29,12 @@ export class Island {
     return this.base;
   }
 
+  /** True while the pill window reserves the separate Mic/Cam strip. The main
+      hover poll reads this to keep that strip out of the hover-to-open zone. */
+  get micPillActive(): boolean {
+    return this.micExtra !== null;
+  }
+
   private bounds(state: IslandState): Rect {
     return boundsFor(
       state,
@@ -94,8 +100,16 @@ export class Island {
       return;
     }
     if (this.state === 'pill') {
-      if (active) this.win.setBounds(this.bounds('pill'));
-      else if (this.base === 'mini') this.transition('mini');
+      if (active) {
+        this.win.setBounds(this.bounds('pill'));
+      } else if (this.base === 'mini') {
+        this.transition('mini');
+      } else {
+        // Banner over: the body must shrink back to the stored pill width.
+        // Without this the window kept BANNER_EXTRA forever when the base was
+        // 'pill', leaving a long empty bar (clock far left, cat far right).
+        this.win.setBounds(this.bounds('pill'));
+      }
     }
   }
 

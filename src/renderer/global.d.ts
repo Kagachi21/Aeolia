@@ -2,7 +2,7 @@ export {};
 
 declare global {
   type IslandState = 'mini' | 'pill' | 'open';
-  type PointerKind = 'enter' | 'move' | 'leave';
+  type PointerKind = 'enter' | 'move' | 'leave' | 'mic-enter' | 'mic-leave';
 
   interface IslandStatus {
     state: IslandState;
@@ -99,7 +99,44 @@ declare global {
   interface CardSite { id: string; name: string; url: string }
   interface CardShelf { id: string; name: string; path: string; size: number; at: number }
   interface CardClip { id: string; kind: 'text' | 'image' | 'file'; text: string; at: number }
-  interface CardNotice { id: string; app: string; title: string; body: string; at: number }
+  interface CardNotice { id: string; app: string; title: string; body: string; at: number; aumid?: string }
+
+  type NoticeCode = 'disabled' | 'unknown-app' | 'launch-failed';
+  type NoticeVia = 'aumid' | 'protocol' | 'none';
+  type NoticeLaunchResult = {
+    ok: boolean;
+    kind: 'app';
+    app: string;
+    via: NoticeVia;
+    launched: boolean;
+    focused: boolean;
+    code?: NoticeCode;
+    error?: string;
+  };
+  type NoticeReplyResult = {
+    ok: boolean;
+    kind: 'app';
+    app: string;
+    via: NoticeVia;
+    launched: boolean;
+    focused: boolean;
+    hint: string;
+    code?: NoticeCode | 'empty-input';
+    error?: string;
+  };
+  type CamCode = 'unverified-shortcut' | 'need-focus' | 'no-shortcut' | 'unknown-app' | 'send-failed';
+  /* focused = the meeting app was observed as foreground when the decision was
+     made, OR focusProcessWindow succeeded for a need-focus/no-shortcut click.
+     It is NOT proof of camera state. R7 never reports verified:true. */
+  type CamToggleResult = {
+    ok: false;
+    verified: false;
+    sent: boolean;
+    focused: boolean;
+    shortcut: string;
+    code: CamCode;
+    hint: string;
+  };
   interface CardTask { id: string; name: string; done: boolean }
   interface CardState {
     lastTab: string;
@@ -119,6 +156,7 @@ declare global {
     eyeBreakMin: number;
     eyeBreakSound: boolean;
     prayerCity: string;
+    greetingSeen?: boolean;
   }
 
   type CaptureMode = 'full' | 'area' | 'window' | 'record';
@@ -175,11 +213,11 @@ declare global {
       islandOpen(): Promise<void>;
       micMuteState(): Promise<boolean | null>;
       micMuteToggle(): Promise<boolean | null>;
-      camToggle(): Promise<{ ok: boolean; hint?: string }>;
-      noticeReply(app: string, body: string, text: string): Promise<{ opened: boolean }>;
+      camToggle(): Promise<CamToggleResult>;
+      noticeReply(app: string, body: string, text: string, aumid?: string): Promise<NoticeReplyResult>;
       prevMedia(): void;
       nextMedia(): void;
-      openNotice(app: string, body: string): void;
+      openNotice(app: string, body: string, aumid?: string): Promise<NoticeLaunchResult>;
       getStats(): Promise<{ cpu: number; ramUsedMb: number; ramTotalMb: number; ramPercent: number }>;
       cleanRam(): Promise<{ freedMb: number; trimmed: number; denied: number }>;
       getBrightness(): Promise<{ supported: boolean; current: number }>;

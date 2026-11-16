@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 
-type PointerKind = 'enter' | 'move' | 'leave';
+type PointerKind = 'enter' | 'move' | 'leave' | 'mic-enter' | 'mic-leave';
 
 type RobotState = {
   idle: boolean;
@@ -86,10 +86,12 @@ contextBridge.exposeInMainWorld('api', {
   micMuteState: () => ipcRenderer.invoke('mic:mute-state'),
   micMuteToggle: () => ipcRenderer.invoke('mic:mute-toggle'),
   camToggle: () => ipcRenderer.invoke('cam:toggle'),
-  noticeReply: (app: string, body: string, text: string) => ipcRenderer.invoke('notice:reply', app, body, text),
+  noticeReply: (app: string, body: string, text: string, aumid?: string) =>
+    ipcRenderer.invoke('notice:reply', app, body, text, aumid),
   prevMedia: () => ipcRenderer.send('media:prev'),
   nextMedia: () => ipcRenderer.send('media:next'),
-  openNotice: (app: string, body: string) => ipcRenderer.send('notice:open', app, body),
+  openNotice: (app: string, body: string, aumid?: string) =>
+    ipcRenderer.invoke('notice:open', app, body, aumid),
   getStats: () => ipcRenderer.invoke('stats:get'),
   cleanRam: () => ipcRenderer.invoke('ram:clean'),
   getBrightness: () => ipcRenderer.invoke('ctl:brightness'),

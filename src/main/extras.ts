@@ -4,7 +4,8 @@
 import { app, dialog, net, powerMonitor, shell } from 'electron';
 import { existsSync, watch, type FSWatcher } from 'node:fs';
 import { join } from 'node:path';
-import { getWindowTitles } from './activeWindow';
+import { getWindowTitles, type WindowInfo } from './activeWindow';
+import { startNotificationWatch, stopNotificationWatch } from './notifications';
 import { loadSettings } from './settings';
 import { load, pushNotice } from './store';
 
@@ -30,10 +31,59 @@ const MEETING_APPS = /zoom|msteams|teams|skype|webex|google meet|meet\.google|fa
    them constantly. Only explicit call phrases count. */
 const CALL_WORDS = /(voice|video)[ -]?(call|chat)|incoming[ -]?call|outgoing[ -]?call|ringing|in call|panggilan|voice connected|huddle|meet\.google/i;
 
-/** Pure matcher so probes can pin the false-positive behaviour. */
+/** Pure matcher so probes can pin the false-positive behaviour. Window-title
+    semantics are deliberately unchanged: adding audio-session detection must
+    not rewrite the existing contract. */
 export function matchesCall(label: string): boolean {
   return MEETING_APPS.test(label) || CALL_WORDS.test(label);
 }
+
+/* Windows itself keeps capture sessions open (audio engine, shell, our own
+   recorder). They are not meetings, so they never light meeting mode. */
+const SYSTEM_AUDIO_PROCESSES = new Set([
+  'audiodg', 'svchost', 'dllhost', 'runtimebroker', 'shellexperiencehost',
+  'searchhost', 'startmenuexperiencehost', 'systemsettings', 'explorer',
+  'dwm', 'csrss', 'winlogon', 'conhost', 'fontdrvhost', 'powershell',
+  'pwsh', 'cmd', 'system', 'securityhealthservice', 'backgroundtaskhost',
+  'aeolia', 'aeolia island', 'aeoliaisland', 'electron',
+]);
+
+const basename = (name: string): string =>
+  String(name || '').trim().toLowerCase().replace(/\.exe$/i, '');
+
+/**
+ * Pure meeting decision over the two independent signals:
+ *   1. window titles (dedicated conferencing apps + explicit call phrases)
+ *   2. processes with a LIVE capture (microphone) audio session
+ * A chat app that is merely open has neither an explicit call title nor an
+ * active capture session, so it stays out of meeting mode. meetingIgnoreApps
+ * applies to both signals. Exported so probes can pin the false-positive rules.
+ */
+export function selectMeetingApp(
+  titles: WindowInfo[],
+  captures: string[],
+  meetingAuto: boolean,
+  ignoreApps: string[]
+): string {
+  if (!meetingAuto) return '';
+  const ignored = (label: string): boolean => (ignoreApps || []).some((entry) =>
+    label.toLowerCase().includes(String(entry || '').toLowerCase().trim()));
+
+  for (const w of titles || []) {
+    const label = `${w.process} ${w.title}`;
+    if (matchesCall(label) && !ignored(w.process) && !ignored(w.title)) {
+      return basename(w.process) || String(w.title || '').slice(0, 30);
+    }
+  }
+  for (const raw of captures || []) {
+    const name = basename(raw);
+    if (!name || SYSTEM_AUDIO_PROCESSES.has(name)) continue;
+    if (ignored(name)) continue;
+    return name;
+  }
+  return '';
+}
+
 const CITY_COORDS: Record<string, { lat: number; lon: number }> = {
   'Jakarta': { lat: -6.2088, lon: 106.8456 },
   'Bandung': { lat: -6.9175, lon: 107.6191 },
@@ -59,49 +109,52 @@ const state: ExtrasState = {
 };
 
 let onChange: (() => void) | null = null;
-let notify: ((app: string, title: string, body: string) => void) | null = null;
+let notify: ((app: string, title: string, body: string, aumid?: string) => void) | null = null;
 let downloadsWatcher: FSWatcher | null = null;
 let wasOffline = false;
 let lockedAt = 0;
 let wasPlayingBeforeMeeting = false;
 let mediaPlaying = () => false;
 let pauseMedia: (() => void) | null = null;
+let captureProbe: (() => Promise<string[]>) | null = null;
+let meetingPollBusy = false;
 
 function publish(): void { onChange?.(); }
 
-function ignored(appName: string): boolean {
-  const list = loadSettings().meetingIgnoreApps;
-  return list.some((entry) => appName.toLowerCase().includes(entry.toLowerCase().trim()));
-}
-
-/* Meeting detection uses window titles because Windows exposes no reliable
-   "microphone in use" flag to a sandboxed app. Camera/mic-only apps can be
-   excluded through the ignore list. */
-function pollMeeting(): void {
-  const s = loadSettings();
-  let found = '';
-  if (s.meetingAuto) {
-    try {
-      for (const w of getWindowTitles()) {
-        const label = `${w.process} ${w.title}`;
-        if (matchesCall(label) && !ignored(w.process) && !ignored(w.title)) {
-          found = w.process.replace(/\.exe$/i, '') || w.title.slice(0, 30);
-          break;
-        }
-      }
-    } catch { /* enumeration can fail transiently */ }
-  }
-  const nowMeeting = Boolean(found);
-  if (nowMeeting !== state.meeting) {
-    if (nowMeeting) {
-      wasPlayingBeforeMeeting = mediaPlaying();
-      if (wasPlayingBeforeMeeting) pauseMedia?.();
+/* Meeting detection combines two signals:
+   - window titles (dedicated conferencing tools + explicit call phrases)
+   - ACTIVE capture audio sessions (Core Audio), which is how a Discord voice
+     channel, Zoom, Teams or a browser call becomes visible even when the
+     window title says nothing about a call.
+   Enumeration failures (window list OR COM) never stop the island: they just
+   leave that signal empty for this tick. */
+async function pollMeeting(): Promise<void> {
+  if (meetingPollBusy) return;
+  meetingPollBusy = true;
+  try {
+    const s = loadSettings();
+    let titles: WindowInfo[] = [];
+    let captures: string[] = [];
+    try { titles = getWindowTitles(); } catch { /* transient enumeration failure */ }
+    // No Core Audio work at all when the user disabled automatic meetings.
+    if (captureProbe && s.meetingAuto) {
+      try { captures = await captureProbe(); } catch { captures = []; }
     }
-    state.meeting = nowMeeting;
-    state.meetingApp = found;
-    publish();
-  } else {
-    state.meetingApp = found;
+    const found = selectMeetingApp(titles, captures, s.meetingAuto, s.meetingIgnoreApps);
+    const nowMeeting = Boolean(found);
+    if (nowMeeting !== state.meeting) {
+      if (nowMeeting) {
+        wasPlayingBeforeMeeting = mediaPlaying();
+        if (wasPlayingBeforeMeeting) pauseMedia?.();
+      }
+      state.meeting = nowMeeting;
+      state.meetingApp = found;
+      publish();
+    } else {
+      state.meetingApp = found;
+    }
+  } finally {
+    meetingPollBusy = false;
   }
 }
 
@@ -219,29 +272,39 @@ function watchDownloads(): void {
 
 export function registerExtras(deps: {
   changed(): void;
-  notice(app: string, title: string, body: string): void;
+  notice(app: string, title: string, body: string, aumid?: string): void;
   mediaPlaying(): boolean;
   pauseMedia(): void;
+  captureProbe?: () => Promise<string[]>;
 }): void {
   onChange = deps.changed;
   notify = deps.notice;
   mediaPlaying = deps.mediaPlaying;
   pauseMedia = deps.pauseMedia;
+  // Injected so plain-node QA harnesses never spawn the Core Audio helper.
+  captureProbe = deps.captureProbe ?? null;
 
   powerMonitor.on('lock-screen', () => { lockedAt = Date.now(); });
   powerMonitor.on('suspend', () => { lockedAt = Date.now(); });
   powerMonitor.on('unlock-screen', maybeOfferResume);
   powerMonitor.on('resume', maybeOfferResume);
 
-  setInterval(pollMeeting, 4000);
+  setInterval(() => void pollMeeting(), 4000);
   setInterval(() => void checkOnline(), 15000);
   setInterval(() => void fetchWeather(), 10 * 60 * 1000);
   setInterval(() => void fetchCalendar(), 10 * 60 * 1000);
   watchDownloads();
+  // Real toasts. Until now nothing but the Downloads watcher ever produced a
+  // notice, so "notifikasi tidak muncul" was literally true for every app the
+  // user cared about. The sink goes through notify (not pushServiceNotice):
+  // that callback is what main wires to pushNotice + broadcast, and broadcast
+  // is what makes the renderer queue a banner. Writing the store alone would
+  // file the notice silently.
+  startNotificationWatch((app, title, body, aumid) => notify?.(app, title, body, aumid));
   void checkOnline();
   void fetchWeather();
   void fetchCalendar();
-  pollMeeting();
+  void pollMeeting();
 }
 
 function maybeOfferResume(): void {
@@ -280,6 +343,7 @@ export function openPath(path: string): void {
 export function disposeExtras(): void {
   downloadsWatcher?.close();
   downloadsWatcher = null;
+  stopNotificationWatch();
 }
 
 export function pushServiceNotice(app: string, title: string, body: string): void {

@@ -7,6 +7,7 @@
 const { app, BrowserWindow } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
+const os = require('node:os');
 
 const root = __dirname;
 const ALL = ['web', 'notifications', 'shelf', 'clipboard', 'music', 'today',
@@ -913,6 +914,87 @@ async function settingsProbe() {
   win.destroy();
 }
 
+/* ---- First-run-only greeting: real second-launch / disabled-toggle DOM ----
+   Each case gets a private copy of the QA preload with its OWN _qa-state.json,
+   so the persisted settings of one "install" cannot leak into another. */
+async function firstRunProbe() {
+  const base = JSON.parse(fs.readFileSync(path.join(root, '_qa-state.json'), 'utf8'));
+  const launch = (seed = {}) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aeolia-ui-first-'));
+    fs.copyFileSync(path.join(root, '_qa-preload.js'), path.join(dir, '_qa-preload.js'));
+    fs.writeFileSync(path.join(dir, '_qa-state.json'), JSON.stringify({
+      ...base,
+      settings: { ...base.settings, ...(seed.settings || {}) },
+      // The one-shot flag lives in the persisted card store, not in settings.
+      card: { ...(base.card || {}), ...(seed.card || {}) },
+    }));
+    const w = new BrowserWindow({
+      width: 360, height: 420, frame: false, show: false, backgroundColor: '#17191d',
+      webPreferences: {
+        preload: path.join(dir, '_qa-preload.js'),
+        contextIsolation: true, nodeIntegration: false, sandbox: false,
+        backgroundThrottling: false,
+      },
+    });
+    w.webContents.on('console-message', (_e, level, message) => {
+      consoleMessages.push({ level, message });
+    });
+    return w;
+  };
+  const snap = (w) => js(w, `(() => { const r = document.getElementById('island');
+    return { greeting: r.dataset.greeting, catPos: r.dataset.catPos,
+      marks: window.probe.calls().filter(c => c.kind === 'patch'
+        && c.payload && c.payload.greetingSeen === true).length }; })()`);
+  const boot = async (w) => {
+    await w.loadFile(path.join(root, 'dist', 'renderer', 'index.html'));
+    await js(w, `window.probe.emit('status', { state: 'pill', meeting: false }); true`);
+    await sleep(260);
+  };
+
+  /* (a) fresh install: exactly one greeting, flag consumed once. */
+  const w1 = launch({ card: {} });
+  await boot(w1);
+  const a = await snap(w1);
+  check('FirstRun (a) install baru menyapa sekali & menyimpan greetingSeen sekali',
+    a.greeting === 'true' && a.catPos === 'center' && a.marks === 1, JSON.stringify(a));
+
+  /* (f) a real click DURING the greeting still reaches the island. */
+  const during = await js(w1, `(() => { window.probe.clear();
+    const pill = document.getElementById('pill');
+    const r = pill.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    const el = document.elementFromPoint(cx, cy) || pill;
+    el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true,
+      view: window, clientX: cx, clientY: cy }));
+    return { catOwns: !!el.closest('.cat-slot'),
+      calls: window.probe.calls().map(c => c.kind) }; })()`);
+  check('FirstRun (f) klik saat greeting tetap sampai ke target (non-blocking)',
+    during.catOwns === false && during.calls.includes('islandOpen'), JSON.stringify(during));
+  w1.destroy();
+
+  /* (b) second launch: already shown -> no greeting, cat settles at once. */
+  const w2 = launch({ card: { greetingSeen: true } });
+  await boot(w2);
+  const b = await snap(w2);
+  check('FirstRun (b) peluncuran kedua tidak menyapa, kucing langsung ke kanan',
+    b.greeting === 'false' && b.catPos === 'right' && b.marks === 0, JSON.stringify(b));
+  /* (e) re-enabling catGreeting later must not replay it. */
+  await js(w2, `window.probe.emit('settings', { catGreeting: true }); true`);
+  await sleep(150);
+  const e2 = await snap(w2);
+  check('FirstRun (e) aktifkan ulang catGreeting tidak memutar ulang sapaan',
+    e2.greeting === 'false' && e2.catPos === 'right', JSON.stringify(e2));
+  w2.destroy();
+
+  /* (d) catGreeting=false: never arms. */
+  const w3 = launch({ settings: { catGreeting: false }, card: {} });
+  await boot(w3);
+  const d = await snap(w3);
+  check('FirstRun (d) catGreeting=false tidak pernah menyapa',
+    d.greeting === 'false' && d.catPos === 'right', JSON.stringify(d));
+  w3.destroy();
+}
+
 app.on('window-all-closed', (event) => event.preventDefault());
 
 app.whenReady().then(async () => {
@@ -920,6 +1002,7 @@ app.whenReady().then(async () => {
   try {
     await rendererProbe();
     await settingsProbe();
+    await firstRunProbe();
   } catch (err) {
     check('probe selesai tanpa exception', false, String(err && err.stack || err));
   }

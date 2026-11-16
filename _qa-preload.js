@@ -3,7 +3,11 @@
    Extra vs Kou's seam: injectable clipboard success/failure so the
    Tersalin / Ditempel / Gagal branches can actually be exercised.
 */
-const { contextBridge } = require('electron');
+const electronModule = require('electron');
+const contextBridge = electronModule.contextBridge || { exposeInMainWorld: () => {} };
+if (!electronModule.contextBridge) {
+  console.log('PASS  QA_PRELOAD node smoke: preload is Electron-only, no bridge in plain node');
+}
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -68,7 +72,7 @@ const reg = (name, cb) => {
 const emit = (name, payload) => { for (const cb of (listeners.get(name) || []).slice()) cb(payload); };
 const noopReg = (name) => (cb) => reg(name, cb);
 
-const flags = { failCopy: false, failPaste: false, throwCopy: false, throwPaste: false };
+const flags = { failCopy: false, failPaste: false, throwCopy: false, throwPaste: false, failMic: false };
 
 contextBridge.exposeInMainWorld('island', {
   onStatus: noopReg('status'),
@@ -123,12 +127,25 @@ contextBridge.exposeInMainWorld('api', {
   playMedia: () => record('playMedia', null),
   bannerShow: (active) => record('bannerShow', active),
   islandOpen: () => record('islandOpen', null),
-  micMuteState: async () => true,
-  micMuteToggle: async () => { record('micMuteToggle', null); return true; },
-  camToggle: async () => { record('camToggle', null); return { ok: true }; },
-  noticeReply: async (app, body, text) => {
-    record('noticeReply', { app, body, text });
-    return { opened: true };
+  markGreetingShown: () => record('markGreetingShown', null),
+  micMuteState: async () => flags.failMic ? null : true,
+  micMuteToggle: async () => {
+    record('micMuteToggle', null);
+    return flags.failMic ? null : true;
+  },
+  camToggle: async () => {
+    record('camToggle', null);
+    return { ok: false, verified: false, sent: false, focused: false,
+      shortcut: '', code: 'no-shortcut', hint: 'Kamera dikontrol di aplikasi rapat (best effort)' };
+  },
+  noticeReply: async (app, body, text, aumid) => {
+    record('noticeReply', { app, body, text, aumid });
+    return { ok: true, kind: 'app', app, via: 'protocol', launched: true, focused: true,
+      hint: 'Aplikasi dibuka · ketik dan kirim di sana' };
+  },
+  openNotice: async (app, body, aumid) => {
+    record('openNotice', { app, body, aumid });
+    return { ok: true, kind: 'app', app, via: 'protocol', launched: true, focused: true };
   },
   getStats: async () => ({ cpu: 12, ramUsedMb: 8200, ramTotalMb: 16384, ramPercent: 50 }),
   cleanRam: async () => ({ freedMb: 0, trimmed: 0, denied: 0 }),

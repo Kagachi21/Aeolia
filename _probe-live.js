@@ -40,7 +40,7 @@ Module._load = function (request, parent, isMain) {
         rect: { x: 0, y: 0, width: 1920, height: 1080 },
       }),
       getWindowTitles: () => [],
-      isBusyProcess: () => false,
+      isBusyProcess: () => false, BROWSERS: new Set(), browserShouldShrink: () => false, browserTabCount: () => 0,
     };
   }
   return originalLoad.call(this, request, parent, isMain);

@@ -800,7 +800,12 @@
     }
     $('calExtras').hidden = !(weather || agenda);
     $('calWeather').textContent = weather;
-    $('calNext').textContent = agenda;
+    /* This used to be $('calNext'), which is the NEXT-MONTH ARROW BUTTON.
+       The agenda span carried the same id, so getElementById returned the
+       button and every render overwrote its glyph with the agenda text: the
+       arrow rendered as an empty rounded square, and the agenda line never
+       received its content. The span is calNextEvent now. */
+    $('calNextEvent').textContent = agenda;
     window.dispatchEvent(new Event('aeolia:measure'));
   }
 

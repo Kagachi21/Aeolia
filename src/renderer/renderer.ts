@@ -103,6 +103,7 @@ const pillLayer = document.getElementById('pill') as HTMLElement;
 const miniLayer = document.getElementById('mini') as HTMLElement;
 const micPillLayer = document.getElementById('micPill') as HTMLElement;
 const bannerLayer = document.getElementById('banner') as HTMLElement;
+const openHint = document.getElementById('openHint') as HTMLElement | null;
 const bnAvatar = document.getElementById('bnAvatar') as HTMLElement;
 const bnTitle = document.getElementById('bnTitle') as HTMLElement;
 const bnBody = document.getElementById('bnBody') as HTMLElement;
@@ -182,6 +183,45 @@ function applyGlass(level: number | undefined): void {
   root.style.setProperty('--glass-a', a.toFixed(2).replace(/0$/, ''));
 }
 
+/* One variant per surface: regular is the legible frost, clear is the more
+   transparent Translucent pane with its own local text backing. */
+function applyGlassVariant(surface: string): void {
+  root.dataset.glassVariant = surface === 'Translucent'
+    ? 'clear'
+    : surface === 'Candy glass' ? 'candy' : 'regular';
+}
+
+/* The specular origin is measured in pane percentages, so it stays anchored
+   to the same pixel when the island scales or changes shape. */
+function paintGlassSpecular(event: MouseEvent): void {
+  const r = root.getBoundingClientRect();
+  if (r.width < 1 || r.height < 1) return;
+  const x = Math.min(100, Math.max(0, ((event.clientX - r.left) / r.width) * 100));
+  const y = Math.min(100, Math.max(0, ((event.clientY - r.top) / r.height) * 100));
+  root.style.setProperty('--glass-x', `${x.toFixed(1)}%`);
+  root.style.setProperty('--glass-y', `${y.toFixed(1)}%`);
+}
+
+/* The Liquid Glass FX uses CSS masks + blend modes, not WebGL: a transparent
+   always-on-top Electron window has no backdrop texture to feed a shader and
+   capturing the desktop every frame is neither cheap nor reliable. If the
+   engine cannot paint those layers, turn them OFF: the existing stable dark
+   glass base is the graceful fallback. */
+function applyGlassFxSupport(): void {
+  const cssApi = (window as unknown as {
+    CSS?: { supports?: (prop: string, value: string) => boolean };
+  }).CSS;
+  const supports = typeof cssApi?.supports === 'function'
+    ? (prop: string, value: string): boolean => cssApi!.supports!(prop, value)
+    : () => false;
+  const mask = supports('mask-image', 'linear-gradient(#000, #000)')
+    || supports('-webkit-mask-image', 'linear-gradient(#000, #000)');
+  const blend = supports('mix-blend-mode', 'screen');
+  root.dataset.glassFx = mask && blend ? 'on' : 'off';
+}
+
+applyGlassFxSupport();
+
 function paintClock(): void {
   const now = new Date();
   const text = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
@@ -248,8 +288,30 @@ let hovered = false;
 const meetingMicBtn = document.getElementById('meetingMic') as HTMLButtonElement;
 const meetingCamBtn = document.getElementById('meetingCam') as HTMLButtonElement | null;
 const micPill = document.getElementById('micPill') as HTMLDivElement;
-let micMuted = false;
+let micMuted: boolean | null = false;
 let micJoinTimer: number | null = null;
+let micHotReported = false;
+let micTogglePending = false;
+
+/* null is a real state: Core Audio refused the read. Never paint a success
+   colour or a definite aria-pressed value for it. */
+function applyMicState(next: boolean | null): void {
+  micMuted = next;
+  root.dataset.micMuted = next === null ? 'unknown' : String(next);
+  meetingMicBtn.classList.toggle('muted', next === true);
+  meetingMicBtn.setAttribute('aria-pressed', next === null ? 'mixed' : String(next));
+}
+
+/* The capsules sit inside the pill window. Without this signal the main
+   process's cursor poll treats them as "hovering the island", arms hover-open,
+   and the card expands before the click can reach the button. The renderer
+   reports the real DOM hit (mouseenter/mouseleave on the buttons), and main
+   cancels armHover for as long as the capsule is hot. */
+function reportMicHot(hot: boolean): void {
+  if (hot === micHotReported) return;
+  micHotReported = hot;
+  window.island.pointer(hot ? 'mic-enter' : 'mic-leave');
+}
 
 function updateMeetingMic(): void {
   const active = root.dataset.meeting === 'true' && root.dataset.meetingMic !== 'false';
@@ -258,6 +320,7 @@ function updateMeetingMic(): void {
     if (micJoinTimer !== null) { clearTimeout(micJoinTimer); micJoinTimer = null; }
     micPill.hidden = true;
     root.dataset.mic = 'off';
+    reportMicHot(false);
   } else {
     micPill.hidden = false;
     if (root.dataset.mic === 'off') {
@@ -265,41 +328,67 @@ function updateMeetingMic(): void {
       // mute state is fetched so the button never claims an invented state.
       root.dataset.mic = 'joining';
       window.api.micMuteState().then((muted) => {
-        micMuted = muted === true;
-        root.dataset.micMuted = muted === null ? 'unknown' : String(micMuted);
+        applyMicState(muted);
         updateMeetingMic();
-      }).catch(() => { root.dataset.micMuted = 'unknown'; });
+      }).catch(() => applyMicState(null));
       micJoinTimer = window.setTimeout(() => {
         micJoinTimer = null;
         if (root.dataset.mic === 'joining') root.dataset.mic = 'on';
       }, 1400);
     }
   }
-  meetingMicBtn.classList.toggle('muted', micMuted);
-  meetingMicBtn.setAttribute('aria-pressed', String(micMuted));
+  applyMicState(micMuted);
   applyBarOrder();
 }
 
 meetingMicBtn.addEventListener('click', () => {
+  if (micTogglePending) {
+    meetingMicBtn.setAttribute('aria-disabled', 'true');
+    showIslandHint('Mikrofon', 'Mikrofon masih diproses · tunggu sebentar');
+    return;
+  }
+  micTogglePending = true;
+  meetingMicBtn.disabled = true;
+  meetingMicBtn.setAttribute('aria-disabled', 'true');
   window.api.micMuteToggle().then((next) => {
     if (next === null) {
-      root.dataset.micMuted = 'unknown';
+      applyMicState(null);
       meetingMicBtn.title = 'Mikrofon tidak bisa dikontrol · cek izin aplikasi';
+      showIslandHint('Mikrofon', 'Mikrofon tidak bisa dikontrol · cek izin aplikasi');
       return;
     }
-    micMuted = next;
-    root.dataset.micMuted = String(micMuted);
-    meetingMicBtn.title = micMuted ? 'Buka bisukan mikrofon' : 'Bisukan mikrofon';
+    applyMicState(next);
+    meetingMicBtn.title = next ? 'Buka bisukan mikrofon' : 'Bisukan mikrofon';
     updateMeetingMic();
-  }).catch(() => { root.dataset.micMuted = 'unknown'; });
+  }).catch(() => {
+    applyMicState(null);
+    meetingMicBtn.title = 'Mikrofon tidak bisa dikontrol · cek izin aplikasi';
+    showIslandHint('Mikrofon', 'Mikrofon tidak bisa dikontrol · cek izin aplikasi');
+  }).finally(() => {
+    micTogglePending = false;
+    meetingMicBtn.disabled = false;
+    meetingMicBtn.setAttribute('aria-disabled', 'false');
+  });
 });
 
 if (meetingCamBtn) {
   meetingCamBtn.addEventListener('click', () => {
     window.api.camToggle().then((r) => {
-      meetingCamBtn.title = r.hint || (r.ok ? 'Kamera meeting' : 'Kamera dikontrol di aplikasi rapat');
-    }).catch(() => { meetingCamBtn.title = 'Kamera dikontrol di aplikasi rapat'; });
+      const hint = r.hint || 'Kamera dikontrol di aplikasi rapat (best effort)';
+      meetingCamBtn.title = hint;
+      showIslandHint('Kamera', hint);
+    }).catch(() => {
+      meetingCamBtn.title = 'Kamera dikontrol di aplikasi rapat (best effort)';
+      showIslandHint('Kamera', 'Kamera dikontrol di aplikasi rapat (best effort)');
+    });
   });
+}
+
+for (const capsule of [meetingMicBtn, meetingCamBtn]) {
+  capsule?.addEventListener('mouseenter', () => reportMicHot(true));
+  capsule?.addEventListener('mouseleave', () => reportMicHot(false));
+  capsule?.addEventListener('focus', () => reportMicHot(true));
+  capsule?.addEventListener('blur', () => reportMicHot(false));
 }
 
 /* ---- notice / meeting banner ----
@@ -318,7 +407,7 @@ let callAnimTimer: number | null = null;
 /* Banner-friendly states: pill and open only. The mini notch shows the clock
    and nothing else. A banner arriving there waits in the queue until the
    island peeks to pill (hover/click), so the notch is never overwritten. */
-const bannerOk = (): boolean => root.dataset.state === 'pill' || root.dataset.state === 'open';
+const bannerOk = (): boolean => root.dataset.state === 'pill';
 
 function hideBanner(): void {
   bannerLayer.hidden = true;
@@ -357,6 +446,51 @@ function showNextBanner(): void {
 function enqueueBanner(item: BannerItem): void {
   bannerQueue.push(item);
   if (bannerTimer === null && bannerGapTimer === null) showNextBanner();
+}
+
+/* The island speaking for itself.
+   A click that cannot change anything still has to answer. Writing the reason
+   into button.title was useless: the window is 39 px tall, so the tooltip was
+   clipped away and the Mic/Cam capsules read as dead buttons. The hint goes
+   through the banner instead, which widens the window and is the only surface
+   with room for a sentence. */
+let openHintTimer: number | null = null;
+
+function hideOpenHint(): void {
+  if (openHintTimer !== null) { clearTimeout(openHintTimer); openHintTimer = null; }
+  if (openHint) {
+    openHint.hidden = true;
+    openHint.textContent = '';
+  }
+}
+
+/* The banner is an absolute overlay made for the 39 px pill. Painting it
+   while the card is open put hint text straight across the panel content.
+   In the open state the same message gets a reserved strip in normal flow. */
+function showOpenHint(app: string, body: string): void {
+  if (!openHint) { enqueueBanner({ app, title: app, body, tone: 'notice' }); return; }
+  if (openHintTimer !== null) clearTimeout(openHintTimer);
+  openHint.textContent = `${app} · ${body}`;
+  openHint.hidden = false;
+  openHintTimer = window.setTimeout(hideOpenHint, 4200);
+}
+
+const stateObserver = new MutationObserver(() => {
+  if (root.dataset.state === 'open') {
+    // A banner triggered in the pill can still be on screen when hover opens
+    // the card. It is an absolute pill overlay; leaving it up paints text
+    // straight through the panels. Clear it and let queued notices wait for
+    // the next pill state.
+    if (bannerTimer !== null) { clearTimeout(bannerTimer); bannerTimer = null; }
+    if (bannerGapTimer !== null) { clearTimeout(bannerGapTimer); bannerGapTimer = null; }
+    hideBanner();
+  } else hideOpenHint();
+});
+stateObserver.observe(root, { attributes: true, attributeFilter: ['data-state'] });
+
+function showIslandHint(app: string, body: string): void {
+  if (root.dataset.state === 'open') showOpenHint(app, body);
+  else enqueueBanner({ app, title: app, body, tone: 'notice' });
 }
 
 const svcBar = document.getElementById('svcBar') as HTMLDivElement;
@@ -401,7 +535,9 @@ function renderStatus(status: IslandStatus): void {
   root.dataset.media = String(status.media);
   root.dataset.accent = status.accent || '#e9eef7';
   root.dataset.surface = status.surface || 'Black';
-  applyGlass((status as IslandStatus).glassLevel);  root.dataset.islandStyle = status.islandStyle || root.dataset.islandStyle || 'dynamic';
+  applyGlass((status as IslandStatus).glassLevel);
+  applyGlassVariant(root.dataset.surface);
+  root.dataset.islandStyle = status.islandStyle || root.dataset.islandStyle || 'dynamic';
   root.dataset.pos = (status as IslandStatus).islandPosition || root.dataset.pos || 'center';
   root.dataset.hidden = String(Boolean(status.hiddenUntilHover));
   root.dataset.hovered = String(hovered);
@@ -435,24 +571,97 @@ function renderStatus(status: IslandStatus): void {
   }
 }
 
-let greetingDone = false;
+/* Startup greeting is a PURELY VISUAL 1.5 s wink, shown ONCE PER INSTALL.
+   It never gates input: the island is interactive from the first painted
+   frame, the cat is pointer-events:none, and no overlay is shown. The one-shot
+   window is persisted as state.greetingSeen (store.ts). The decision waits
+   for BOTH the settings payload (catGreeting) and the persisted card state,
+   so a cold-start IPC race cannot make it replay on the next launch. */
 let catIdle = false;
+let greetingDone = true;
+let greetingArmed = false;
+let greetingTimer: number | null = null;
+let greetingSettingsKnown = false;
+let greetingStateKnown = false;
+let greetingDecisionMade = false;
+let catGreetingEnabled = true;
+let greetingPlayable = true;
 
 function updateCatPos(): void {
-  const next = !greetingDone
-    ? 'center'
-    : catIdle && root.dataset.catIdleCenter === 'true' ? 'center' : 'right';
+  // Idle must not move the cat. The old rule switched right -> center every
+  // time the robot went idle, so the same icon jumped across the pill every
+  // 30 s. catIdleCenter now means "rest in the centre", not "move on idle".
+  // Media keeps its left rail: its marquee needs the whole middle of the pill.
+  const idleCentre = root.dataset.catIdleCenter === 'true' && root.dataset.media !== 'true';
+  const next = !greetingDone ? 'center' : idleCentre ? 'center' : 'right';
   // Writing the same value on every 200 ms robot tick restarted the CSS
   // transition in some Chromium builds. Only a real change touches the DOM.
   if (root.dataset.catPos !== next) root.dataset.catPos = next;
   applyBarOrder();
 }
 
+function endGreeting(): void {
+  if (greetingTimer !== null) { clearTimeout(greetingTimer); greetingTimer = null; }
+  greetingDone = true;
+  root.dataset.greeting = 'false';
+  updateCatPos();
+}
+
+function armGreeting(): void {
+  // greetingDone starts true (island already settled). greetingArmed is the
+  // one-shot latch that actually prevents a replay.
+  if (greetingArmed) return;
+  greetingArmed = true;
+  greetingDone = false;
+  root.dataset.greeting = 'true';
+  root.dataset.catPos = 'center';
+  greetingTimer = window.setTimeout(endGreeting, 1500);
+}
+
+/**
+ * One-shot decision, taken exactly once when both inputs are known:
+ *   - catGreeting=false  -> never greet
+ *   - greetingSeen=true  -> already greeted on an earlier launch
+ * The flag is consumed at the first decision even when the greeting is
+ * disabled, so re-enabling catGreeting later cannot make it play on every
+ * start. Persisting immediately also survives a crash mid-animation.
+ */
+function decideGreeting(): void {
+  if (greetingDecisionMade || !greetingSettingsKnown || !greetingStateKnown) return;
+  greetingDecisionMade = true;
+  if (greetingPlayable) {
+    try { window.api.patch({ greetingSeen: true }); } catch { /* best effort */ }
+  }
+  if (catGreetingEnabled && greetingPlayable) armGreeting();
+  else endGreeting();
+}
+
+/** Called from BOTH the settings broadcast and the explicit getSettings()
+    promise: the broadcast can race renderer.js listener registration on a
+    cold start, so the greeting must not depend on a single delivery. */
+function applyGreetingSetting(s: IslandSettings): void {
+  greetingSettingsKnown = true;
+  catGreetingEnabled = s.catGreeting !== false;
+  if (!catGreetingEnabled) endGreeting();
+  decideGreeting();
+}
+
+/** Fed by the persisted card state (getState + every state:changed). */
+function applyGreetingState(state: CardState): void {
+  greetingStateKnown = true;
+  greetingPlayable = state.greetingSeen !== true;
+  decideGreeting();
+}
+
+// With no settings payload at all the island still settles immediately.
+updateCatPos();
+
 window.api.onSettingsChanged((s) => {
   barOrder = Array.isArray(s.barOrder) && s.barOrder.length ? s.barOrder : [...BAR_TOKENS];
   root.dataset.accent = s.accent || '#e9eef7';
   root.dataset.surface = s.surface || 'Black';
   applyGlass(s.glassLevel);
+  applyGlassVariant(root.dataset.surface);
   applyRobotSettings(s);
   root.dataset.miniMode = s.miniMode || 'clock';
   // Scale is pushed as the resolved effective value via island:update; the
@@ -464,10 +673,7 @@ window.api.onSettingsChanged((s) => {
   root.dataset.catIdleCenter = String(Boolean(s.catIdleCenter));
   root.dataset.worshipMode = s.worshipMode || 'prayer';
   root.dataset.worshipCountdown = String(s.worshipCountdown !== false);
-  if (s.catGreeting === false) {
-    greetingDone = true;
-    root.dataset.greeting = 'false';
-  }
+  applyGreetingSetting(s);
   updateCatPos();
   updateMeetingMic();
   visibleTabs = Array.isArray(s.visibleTabs) ? s.visibleTabs : [...TABS];
@@ -477,12 +683,10 @@ window.api.onSettingsChanged((s) => {
   measureCard();
 });
 
-/* Startup: the cat greets from the centre, then settles on the right. */
-window.setTimeout(() => {
-  greetingDone = true;
-  root.dataset.greeting = 'false';
-  updateCatPos();
-}, 1500);
+/* No unconditional startup timer: without it a `catGreeting:false` user could
+   still see the greeting until the settings payload arrived, and a late
+   settings broadcast could restart the 1.5 s window. The greeting is armed
+   only by armGreeting() from the first settings payload above. */
 
 /* Idle time, battery level and pointer direction all arrive on one channel. */
 window.island.onRobotState((st) => {
@@ -505,16 +709,32 @@ window.island.onRobotState((st) => {
 /* Brightness reads and writes the real monitor value; volume is relative. */
 const brightnessSlider = document.getElementById('brightnessSlider') as HTMLInputElement;
 const volumeSlider = document.getElementById('volumeSlider') as HTMLInputElement;
+const brightnessValue = document.getElementById('brightnessValue') as HTMLElement | null;
+const volumeValue = document.getElementById('volumeValue') as HTMLElement | null;
 let volumeEstimate = 50;
+
+/* The wells print the live number under the rail, and the drawn thumb follows
+   --cc-pct. Both read the same value, so the visible thumb can never disagree
+   with the control's state. */
+function paintSliderValues(): void {
+  if (brightnessValue) brightnessValue.textContent = brightnessSlider.value;
+  if (volumeValue) volumeValue.textContent = volumeSlider.value;
+  brightnessSlider.parentElement?.style.setProperty('--cc-pct', brightnessSlider.value);
+  volumeSlider.parentElement?.style.setProperty('--cc-pct', volumeSlider.value);
+}
+brightnessSlider.addEventListener('input', paintSliderValues);
+volumeSlider.addEventListener('input', paintSliderValues);
 
 window.api.getBrightness().then((b) => {
   brightnessSlider.disabled = !b.supported;
   if (b.supported) brightnessSlider.value = String(b.current);
+  paintSliderValues();
 });
 
 brightnessSlider.addEventListener('change', async () => {
   const res = await window.api.setBrightness(Number(brightnessSlider.value));
   if (res.ok) brightnessSlider.value = String(res.current);
+  paintSliderValues();
 });
 
 volumeSlider.addEventListener('change', () => {
@@ -523,7 +743,10 @@ volumeSlider.addEventListener('change', () => {
   const steps = Math.round(Math.abs(delta) / 2);
   if (steps > 0) window.api.volumeStep(delta > 0 ? 'up' : 'down', steps);
   volumeEstimate = target;
+  paintSliderValues();
 });
+
+paintSliderValues();
 
 document.getElementById('muteBtn')?.addEventListener('click', () => window.api.toggleMute());
 
@@ -671,6 +894,12 @@ function measureCard(): void {
 }
 
 function activate(tab: string, persist = true): void {
+  // 'settings' is not a panel: any caller that reaches activate() with it
+  // must still open the real Settings window instead of falling back to web.
+  if (tab === 'settings') {
+    window.api.openWindow();
+    return;
+  }
   const target = TABS.includes(tab) || tab === 'panels' ? tab : 'web';
   tabButtons.forEach((b) => b.classList.toggle('active', b.dataset.tab === target));
   panels.forEach((p) => p.classList.toggle('active', p.dataset.panel === target));
@@ -743,10 +972,6 @@ function hueFor(name: string): number {
   return h;
 }
 
-/* Apps that accept the clipboard-reply flow: the same list the main process
-   maps to deep-link protocols (minus web-only Gmail). */
-const CHAT_APPS = ['whatsapp', 'discord', 'telegram', 'zoom', 'teams', 'outlook', 'slack'];
-
 function renderNotices(): void {
   if (!card) return;
   noticeCount.textContent = `${card.notices.length} notices`;
@@ -772,63 +997,47 @@ function renderNotices(): void {
     (row.querySelector('.title') as HTMLElement).textContent = n.title || n.app;
     (row.querySelector('.text') as HTMLElement).textContent = n.body;
     (row.querySelector('.time') as HTMLElement).textContent = relTime(n.at);
+    const note = document.createElement('span');
+    note.className = 'notice-reply-note';
+    // One feedback line per row, used by both the open and reply flows. It is
+    // only attached when there is something honest to report.
+    const showFeedback = (message: string): void => {
+      note.textContent = message;
+      if (note.parentElement !== row) row.appendChild(note);
+    };
     const main = document.createElement('button');
     main.type = 'button';
     main.className = 'notice-main';
     main.title = 'Buka aplikasi sumber notifikasi';
     main.setAttribute('aria-label', `Buka ${n.app}`);
     main.append(...Array.from(row.childNodes));
-    main.addEventListener('click', () => window.api.openNotice(n.app, n.body));
+    main.addEventListener('click', () => {
+      void Promise.resolve(window.api.openNotice(n.app, n.body, n.aumid))
+        .then((r) => {
+          if (!r?.ok) showFeedback(r?.error || 'Aplikasi tidak dapat dibuka.');
+          else showFeedback(r.focused
+            ? `Membuka ${n.app}.`
+            : 'Perintah dibuka diterima Windows · cek jendela aplikasi');
+        })
+        .catch(() => showFeedback('Aplikasi tidak dapat dibuka.'));
+    });
     row.appendChild(main);
-    // Chat apps get the honest reply flow: text goes to the clipboard and the
-    // app opens; Windows gives a toast we own no reply action on.
-    if (CHAT_APPS.some((c) => n.app.toLowerCase().includes(c))) {
-      const replyBtn = document.createElement('button');
-      replyBtn.type = 'button';
-      replyBtn.className = 'notice-reply-toggle';
-      replyBtn.textContent = 'Balas';
-      replyBtn.setAttribute('aria-label', `Balas pesan dari ${n.app}`);
-      const replyBox = document.createElement('div');
-      replyBox.className = 'notice-reply';
-      replyBox.hidden = true;
-      const input = document.createElement('input');
-      input.type = 'text';
-      input.className = 'notice-reply-input';
-      input.placeholder = 'Tulis balasan…';
-      input.setAttribute('aria-label', `Balasan untuk ${n.app}`);
-      const send = document.createElement('button');
-      send.type = 'button';
-      send.className = 'notice-reply-send';
-      send.textContent = 'Kirim';
-      const note = document.createElement('span');
-      note.className = 'notice-reply-note';
-      const finish = (opened: boolean): void => {
-        input.value = '';
-        replyBox.hidden = true;
-        note.textContent = opened
-          ? 'Teks disalin. Buka aplikasinya lalu tempel di chat.'
-          : 'Tidak ada aplikasi yang cocok untuk dibuka.';
-        row.appendChild(note);
-      };
-      send.addEventListener('click', () => {
-        void window.api.noticeReply(n.app, n.body, input.value).then((r) => finish(Boolean(r?.opened)));
-      });
-      input.addEventListener('keydown', (ev) => {
-        if (ev.key === 'Enter') send.click();
-      });
-      replyBtn.addEventListener('click', () => {
-        replyBox.hidden = !replyBox.hidden;
-        replyBtn.classList.toggle('open', !replyBox.hidden);
-        if (!replyBox.hidden) input.focus();
-      });
-      replyBox.append(input, send);
-      row.append(replyBtn, replyBox);
-    }
+    const replyBtn = document.createElement('button');
+    replyBtn.type = 'button';
+    replyBtn.className = 'notice-reply-toggle';
+    replyBtn.textContent = 'Balas';
+    replyBtn.setAttribute('aria-label', `Buka ${n.app} untuk membalas`);
+    replyBtn.addEventListener('click', () => {
+      void Promise.resolve(window.api.noticeReply(n.app, n.body, '', n.aumid))
+        .then((r) => showFeedback(r?.hint || 'Aplikasi tidak dapat dibuka.'))
+        .catch(() => showFeedback('Aplikasi tidak dapat dibuka.'));
+    });
+    row.appendChild(replyBtn);
     noticeList.appendChild(row);
   }
   const hint = document.createElement('p');
   hint.className = 'hint';
-  hint.textContent = 'Klik notifikasi untuk membuka aplikasinya. Balas menyalin teks ke clipboard lalu membuka aplikasinya. Windows tidak mengizinkan membalas langsung dari notifikasi.';
+  hint.textContent = 'Klik notifikasi untuk membuka aplikasinya. Balas membuka aplikasi sumber · ketik dan kirim pesan di sana. Windows tidak mengizinkan membalas langsung dari notifikasi.';
   noticeList.appendChild(hint);
 }
 
@@ -951,7 +1160,7 @@ const PANEL_ICONS: Record<string, string> = {
   controls: '<path d="M4 8h9M19 8h1M4 16h4M12 16h8"/><circle cx="16" cy="8" r="2"/><circle cx="9" cy="16" r="2"/>',
   deck: '<rect x="7" y="3" width="10" height="18" rx="2"/><path d="M11 18h2"/>',
   calls: '<path d="M4 13v-1a8 8 0 0 1 16 0v1"/><rect x="3" y="13" width="4" height="6" rx="1.5"/><rect x="17" y="13" width="4" height="6" rx="1.5"/>',
-  settings: '<circle cx="12" cy="12" r="3"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4"/>',
+  settings: '<g data-icon="gear"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3"/></g>',
 };
 
 function renderPanels(): void {
@@ -1003,6 +1212,8 @@ function renderTimer(): void {
 
 function renderCard(state: CardState): void {
   card = state;
+  // The persisted first-run flag travels with the rest of the card state.
+  applyGreetingState(state);
   // A brand-new top notice becomes a banner (the full list lives in the card).
   // The first snapshot after boot is absorbed silently (no banner flood).
   const top = state.notices[0];
@@ -1093,11 +1304,23 @@ setInterval(() => {
 const statCpu = document.getElementById('statCpu') as HTMLElement;
 const statRam = document.getElementById('statRam') as HTMLElement;
 
+/* The strip cells are 26 px tall and a third of a 360 px card wide, so the
+   RAM figure is printed compactly: "8.2/16 GB" fits, "8397/16384 MB" did not. */
+function ramLabel(usedMb: number, totalMb: number): string {
+  if (!Number.isFinite(totalMb) || totalMb <= 0) return '-';
+  if (totalMb >= 1024) {
+    const usedGb = (usedMb / 1024).toFixed(1);
+    const totalGb = Math.round(totalMb / 1024);
+    return `${usedGb}/${totalGb} GB`;
+  }
+  return `${usedMb}/${totalMb} MB`;
+}
+
 async function refreshStats(): Promise<void> {
   try {
     const s = await window.api.getStats();
     statCpu.textContent = s.cpu < 0 ? '-' : `${s.cpu}%`;
-    statRam.textContent = `${s.ramUsedMb}/${s.ramTotalMb} MB`;
+    statRam.textContent = ramLabel(s.ramUsedMb, s.ramTotalMb);
   } catch { /* window closing */ }
 }
 
@@ -1137,9 +1360,13 @@ document.getElementById('testSpeaker')?.addEventListener('click', () => {
 root.addEventListener('mouseenter', (e) => {
   hovered = true;
   root.dataset.hovered = 'true';
+  paintGlassSpecular(e);
   window.island.pointer('enter', e.clientY);
 });
-root.addEventListener('mousemove', (e) => window.island.pointer('move', e.clientY));
+root.addEventListener('mousemove', (e) => {
+  paintGlassSpecular(e);
+  window.island.pointer('move', e.clientY);
+});
 root.addEventListener('mouseleave', (e) => {
   hovered = false;
   root.dataset.hovered = 'false';
@@ -1322,5 +1549,7 @@ window.api.getSettings().then((s) => {
   root.dataset.musicBg = (s as IslandSettings).musicCardBackground ?? 'album';
   root.dataset.pillLyrics = String(Boolean((s as IslandSettings).pillLyrics));
   root.dataset.musicProgress = (s as IslandSettings).musicCardProgress ?? 'Wave';
+  applyGreetingSetting(s);
+  updateCatPos();
   updateTabArrows();
 }).catch(() => { /* not ready yet */ });

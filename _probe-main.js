@@ -133,7 +133,7 @@ const electronMock = {
 const stubs = {
   activeWindow: {
     getActiveWindow: () => ({ ...activeInfo }),
-    isBusyProcess: () => false,
+    isBusyProcess: () => false, BROWSERS: new Set(), browserShouldShrink: () => false, browserTabCount: () => 0,
   },
   thinFrame: { dropThickFrame: () => {} },
   media: { readMedia: () => ({ playing: false, title: '' }) },

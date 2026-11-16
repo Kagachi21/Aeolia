@@ -1,9 +1,9 @@
-/* Kou - proof for the dynamic album colour music card.
-   A real iTunes lookup runs in the main process, its three hex colours are
-   pushed through the same IPC seam the app uses, and the resulting CSSOM
-   variables, computed background and text contrast are all measured from the
-   painted window. Fallback (unknown song, offline, plain setting) and the
-   stale-title guard are exercised with the same renderer instance.
+/* Kou - proof for the visibly coloured, cover-driven music card.
+   A real iTunes lookup runs in the main process, toDeepPalette() deepens and
+   saturates it, and the three hex colours are pushed through the same IPC seam
+   the app uses. Chroma (mean max-min per pixel) is measured on the exact card
+   rect of the 4x PNG and compared with the user's reference screenshot; text
+   contrast uses the ring ruler on three synthetic desktops.
 
    Run: env -u ELECTRON_RUN_AS_NODE node_modules/electron/dist/electron.exe _probe-musicbg.js
 */
@@ -23,9 +23,13 @@ const REAL_TRACK_2 = 'Dua Lipa - Levitating';
 const FAKE_TRACK = 'Kavi Rao - Neon Harbor';
 const LRC = '[00:00.00] satu\n[00:04.00] dua\n[00:08.00] tiga';
 const BACKDROPS = ['light', 'dark', 'busy'];
+const REF_PATH = 'C:\\Users\\Lycaon\\.workbuddy-ai\\clipboard-images\\'
+  + 'clipboard-2026-11-15T08-58-18-314Z-0263c053.png';
+const REF_BOX = { x0: 80, y0: 30, x1: 590, y1: 240 };
+const CHROMA_TARGET = 55;
 
 const results = [];
-const report = { palette: {}, contrast: {}, guards: {} };
+const report = { palette: {}, chroma: {}, contrast: {}, backgrounds: {}, guards: {} };
 const check = (name, ok, detail) => {
   results.push({ name, ok: Boolean(ok) });
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail === undefined ? '' : '  :: ' + detail}`);
@@ -78,18 +82,84 @@ function compositeOver(img, kind) {
   return nativeImage.createFromBitmap(out, { width: size.width, height: size.height });
 }
 
+function flattenOverWhite(img) {
+  const size = img.getSize();
+  const src = img.toBitmap();
+  const out = Buffer.alloc(src.length);
+  for (let i = 0; i < src.length; i += 4) {
+    const a = src[i + 3] / 255;
+    out[i] = Math.min(255, Math.round(src[i] + 255 * (1 - a)));
+    out[i + 1] = Math.min(255, Math.round(src[i + 1] + 255 * (1 - a)));
+    out[i + 2] = Math.min(255, Math.round(src[i + 2] + 255 * (1 - a)));
+    out[i + 3] = 255;
+  }
+  return nativeImage.createFromBitmap(out, { width: size.width, height: size.height });
+}
+
+/** Team-lead's ruler: mean of max(R,G,B) - min(R,G,B) over the card area. */
+function meanChroma(img, box) {
+  const size = img.getSize();
+  const bmp = img.toBitmap();
+  const x0 = Math.max(0, Math.round(box.x0));
+  const y0 = Math.max(0, Math.round(box.y0));
+  const x1 = Math.min(size.width, Math.round(box.x1));
+  const y1 = Math.min(size.height, Math.round(box.y1));
+  let sum = 0;
+  let n = 0;
+  for (let y = y0; y < y1; y += 1) {
+    for (let x = x0; x < x1; x += 1) {
+      const i = (y * size.width + x) * 4;
+      const r = bmp[i + 2]; const g = bmp[i + 1]; const b = bmp[i];
+      sum += Math.max(r, g, b) - Math.min(r, g, b);
+      n += 1;
+    }
+  }
+  return n ? +(sum / n).toFixed(2) : null;
+}
+
+function cardBoxFor(img, cardRect, pageWidth) {
+  const k = img.getSize().width / pageWidth;
+  return {
+    x0: cardRect.x * k, y0: cardRect.y * k,
+    x1: (cardRect.x + cardRect.w) * k, y1: (cardRect.y + cardRect.h) * k,
+  };
+}
+
+/** Reference crop on the left, our card crop on the right, same size. */
+function sideBySide(refPath, ourImg, ourBox, outName) {
+  const ref = flattenOverWhite(nativeImage.createFromPath(refPath));
+  const ours = flattenOverWhite(ourImg);
+  const w = REF_BOX.x1 - REF_BOX.x0;
+  const h = REF_BOX.y1 - REF_BOX.y0;
+  const left = ref.crop({ x: REF_BOX.x0, y: REF_BOX.y0, width: w, height: h });
+  const box = {
+    x: Math.round(ourBox.x0), y: Math.round(ourBox.y0),
+    width: Math.round(ourBox.x1 - ourBox.x0), height: Math.round(ourBox.y1 - ourBox.y0),
+  };
+  const right = ours.crop(box).resize({ width: w, height: h, quality: 'best' });
+  const a = left.toBitmap(); const b = right.toBitmap();
+  const canvas = Buffer.alloc(w * 2 * h * 4);
+  for (let y = 0; y < h; y += 1) {
+    a.copy(canvas, (y * w * 2) * 4, y * w * 4, (y + 1) * w * 4);
+    b.copy(canvas, (y * w * 2 + w) * 4, y * w * 4, (y + 1) * w * 4);
+  }
+  const out = nativeImage.createFromBitmap(canvas, { width: w * 2, height: h });
+  fs.writeFileSync(path.join(SHOT_DIR, outName), out.toPNG());
+  return { size: [w * 2, h], left: 'referensi user', right: 'kartu dinamis' };
+}
+
 const hex = (c) => `#${[c.r, c.g, c.b].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
 const parseRgb = (css) => {
   const s = String(css || '');
   const m = /rgba?\(([^)]+)\)/.exec(s);
   if (m) {
     const p = m[1].split(',').map((v) => Number(v.trim()));
-    return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 };
+    return { r: p[0], g: p[1], b: p[2] };
   }
   const c = /color\(srgb\s+([^)]+)\)/.exec(s);
   if (c) {
     const p = c[1].trim().split(/[\s/]+/).map((v) => Number(v));
-    return { r: Math.round(p[0] * 255), g: Math.round(p[1] * 255), b: Math.round(p[2] * 255), a: 1 };
+    return { r: Math.round(p[0] * 255), g: Math.round(p[1] * 255), b: Math.round(p[2] * 255) };
   }
   return null;
 };
@@ -114,14 +184,14 @@ function textPixelContrast(img, rect, scale, textCss) {
   const x1 = Math.round((rect.x + rect.w) * scale);
   const y1 = Math.round((rect.y + rect.h) * scale);
   const ring = [];
-  const glyph = [];
   for (let y = y0 - 5; y <= y1 + 5; y += 1) {
     for (let x = x0 - 5; x <= x1 + 5; x += 1) {
       if (y < 0 || x < 0 || y >= size.height || x >= size.width) continue;
+      const inside = y >= y0 && y < y1 && x >= x0 && x < x1;
+      if (inside) continue;
       const i = (y * size.width + x) * 4;
       if (bmp[i + 3] < 200) continue;
-      const p = { r: bmp[i + 2], g: bmp[i + 1], b: bmp[i] };
-      if (y >= y0 && y < y1 && x >= x0 && x < x1) glyph.push(p); else ring.push(p);
+      ring.push({ r: bmp[i + 2], g: bmp[i + 1], b: bmp[i] });
     }
   }
   const surface = {
@@ -132,32 +202,7 @@ function textPixelContrast(img, rect, scale, textCss) {
   const worstSurface = ring.length ? ring[Math.floor(ring.length * 0.95)] : surface;
   const ink = parseRgb(textCss);
   if (!ink || ring.length < 150) return { surface: hex(surface), ring: ring.length, median: null, worst: null };
-  return {
-    surface: hex(surface), ring: ring.length,
-    median: ratio(ink, surface), worst: ratio(ink, worstSurface),
-  };
-}
-
-/** Mean per-pixel chroma = max(R,G,B)-min(R,G,B) over the card body, the same
-    ruler used to reject the first (washed-out) attempt. A card painted as a
-    neutral dark panel scores <20; an album-coloured card scores >=55. */
-function cardChroma(img, rect, scale) {
-  const size = img.getSize();
-  const bmp = img.toBitmap();
-  const x0 = Math.round(rect.x * scale), y0 = Math.round(rect.y * scale);
-  const x1 = Math.min(size.width, Math.round((rect.x + rect.w) * scale));
-  const y1 = Math.min(size.height, Math.round((rect.y + rect.h) * scale));
-  let sum = 0, n = 0;
-  for (let y = y0; y < y1; y += 1) {
-    for (let x = x0; x < x1; x += 1) {
-      const i = (y * size.width + x) * 4;
-      if (bmp[i + 3] < 200) continue;
-      const r = bmp[i + 2], g = bmp[i + 1], b = bmp[i];
-      sum += Math.max(r, g, b) - Math.min(r, g, b);
-      n += 1;
-    }
-  }
-  return { chroma: n ? +(sum / n).toFixed(1) : 0, pixels: n };
+  return { surface: hex(surface), ring: ring.length, median: ratio(ink, surface), worst: ratio(ink, worstSurface) };
 }
 
 const RECTS = `(() => {
@@ -192,35 +237,34 @@ const RECTS = `(() => {
 async function main() {
   fs.mkdirSync(SHOT_DIR, { recursive: true });
 
-  /* A real lookup, no fixture: the same code pollMedia() calls. */
-  const palette = await colors.fetchTrackColors(REAL_TRACK);
-  report.palette[REAL_TRACK] = palette;
-  console.log(`  real palette ${JSON.stringify(palette)}`);
+  /* Real lookups, no fixture. main.ts deepens the palette before IPC. */
+  const raw = await colors.fetchTrackColors(REAL_TRACK);
+  const deep = colors.toDeepPalette(raw);
+  report.palette[REAL_TRACK] = { raw, deep };
+  console.log(`  ${REAL_TRACK}: raw ${JSON.stringify(raw)} -> deep ${JSON.stringify(deep)}`);
   check('lagu nyata: 3 hex warna dari sampul iTunes',
-    Boolean(palette) && ['c1', 'c2', 'c3'].every((k) => /^#[0-9a-f]{6}$/i.test(palette[k])),
-    JSON.stringify(palette));
+    Boolean(raw) && ['c1', 'c2', 'c3'].every((k) => /^#[0-9a-f]{6}$/i.test(raw[k])),
+    JSON.stringify(raw));
   const unknown = await colors.fetchTrackColors(FAKE_TRACK);
-  report.palette[FAKE_TRACK] = unknown;
-  check('judul omong kosong: lookup null (fallback hash)', unknown === null, JSON.stringify(unknown));
-  const second = await colors.fetchTrackColors(REAL_TRACK_2);
-  report.palette[REAL_TRACK_2] = second;
-  console.log(`  second palette ${JSON.stringify(second)}`);
-  check('lagu kedua: palet berbeda (warna mengikuti sampul, bukan hash)',
-    Boolean(second) && Boolean(palette)
-      && ['c1', 'c2', 'c3'].some((k) => second[k] !== palette[k]),
-    JSON.stringify({ first: palette, second }));
+  check('judul omong kosong: lookup null (kartu pakai palet fallback)',
+    unknown === null && colors.toDeepPalette(unknown) === null, JSON.stringify(unknown));
+  const raw2 = await colors.fetchTrackColors(REAL_TRACK_2);
+  const deep2 = colors.toDeepPalette(raw2);
+  report.palette[REAL_TRACK_2] = { raw: raw2, deep: deep2 };
+  console.log(`  ${REAL_TRACK_2}: raw ${JSON.stringify(raw2)} -> deep ${JSON.stringify(deep2)}`);
+  check('lagu kedua: palet dalam berbeda dari lagu pertama',
+    Boolean(deep2) && Boolean(deep) && ['c1', 'c2', 'c3'].some((k) => deep2[k] !== deep[k]),
+    JSON.stringify({ deep, deep2 }));
   const beforeRepeat = colors.colorCacheSize();
   const again = await colors.fetchTrackColors(FAKE_TRACK);
-  check('hasil null ikut di-cache (tidak spam jaringan)', again === null
-    && colors.colorCacheSize() === beforeRepeat,
-  `size=${colors.colorCacheSize()} sebelum=${beforeRepeat}`);
+  check('hasil null ikut di-cache (tidak spam jaringan)',
+    again === null && colors.colorCacheSize() === beforeRepeat,
+    `size=${colors.colorCacheSize()} sebelum=${beforeRepeat}`);
 
-  /* Offline: make net.fetch reject, exactly what _qa-features.js does. */
   const originalFetch = electron.net.fetch;
   electron.net.fetch = () => Promise.reject(new Error('offline in probe'));
   const offline = await colors.fetchTrackColors('Offline Artist - Silent Track');
   electron.net.fetch = originalFetch;
-  report.palette.offline = offline;
   check('offline: fetch gagal -> null tanpa throw', offline === null, JSON.stringify(offline));
 
   const win = new BrowserWindow({
@@ -282,54 +326,43 @@ async function main() {
   }
 
   const fallback = await js(RECTS);
+  report.guards.initial = fallback.card;
   report.cardRect = fallback.cardRect;
   report.pageWidth = fallback.pageWidth;
-  report.guards.fallbackBefore = fallback.card;
-  check('awal: lagu jalan langsung pakai palet fallback (tidak panel abu-abu)',
-    fallback.card.dynamic === 'fallback' && fallback.card.vars.length === 3
-      && fallback.card.vars.every((v) => /^#[0-9a-f]{6}$/i.test(v)),
-    JSON.stringify(fallback.card));
+  report.backgrounds.fallback = fallback.card.bg;
+  check('awal (belum ada lookup): data-dynamic="fallback" dan kartu sudah berwarna',
+    fallback.card.dynamic === 'fallback' && fallback.card.vars.every((v) => /^#[0-9a-f]{6}$/i.test(v))
+      && fallback.card.bg.includes('radial-gradient'),
+    JSON.stringify({ dynamic: fallback.card.dynamic, vars: fallback.card.vars }));
 
-  /* Drive the real palette through the IPC seam. */
-  await pushColors(REAL_TRACK, colors.toDeepPalette(palette));
+  /* Track 1: deep palette through the IPC seam. */
+  await pushColors(REAL_TRACK, deep);
   await sleep(320);
   const dynamic = await js(RECTS);
   report.guards.dynamic = dynamic.card;
-  check('lagu nyata: 3 variabel CSSOM terisi dan dynamic true',
-    dynamic.card.dynamic === 'true' && dynamic.card.vars.length === 3
-      && dynamic.card.vars.every((v) => /^#[0-9a-f]{6}$/i.test(v)),
+  report.backgrounds.track1 = dynamic.card.bg;
+  check('lagu nyata: palet dalam lewat CSSOM, dynamic=true',
+    dynamic.card.dynamic === 'true' && dynamic.card.vars.join('|')
+      === `${deep.c1}|${deep.c2}|${deep.c3}`
+      && dynamic.card.bg !== fallback.card.bg && dynamic.card.art !== fallback.card.art,
     JSON.stringify(dynamic.card.vars));
-  check('background computed berubah dari fallback',
-    dynamic.card.bg !== fallback.card.bg && dynamic.card.bg.includes('radial-gradient'),
-    `fallback=${fallback.card.bg.slice(0, 70)} | dynamic=${dynamic.card.bg.slice(0, 70)}`);
-  check('music-art memakai gradient warna sampul',
-    dynamic.card.art !== getArtFallback(fallback) && dynamic.card.art.includes('linear-gradient'),
-    dynamic.card.art.slice(0, 90));
 
-  /* Stale reply for a different song must be ignored. */
-  await pushColors(FAKE_TRACK, { c1: '#ff0000', c2: '#00ff00', c3: '#0000ff' });
-  await sleep(180);
-  const stale = await js(RECTS);
-  report.guards.stale = stale.card;
-  check('balasan warna untuk lagu lain diabaikan (title guard)',
-    stale.card.dynamic === 'true' && stale.card.vars[0] === dynamic.card.vars[0],
-    JSON.stringify(stale.card.vars));
-
-  /* Contrast of the dynamic card on three desktops. */
-  const shot = await win.capturePage();
-  const scale = shot.getSize().width / (await js('window.innerWidth'));
+  const shot1 = await win.capturePage();
+  const scale = shot1.getSize().width / fallback.pageWidth;
+  let bigLight = null;
   for (const kind of BACKDROPS) {
-    const over = compositeOver(shot, kind);
-    fs.writeFileSync(path.join(SHOT_DIR, `musicbg-dynamic-${kind}-4x.png`),
-      over.resize({ width: over.getSize().width * 4, quality: 'best' }).toPNG());
+    const over = compositeOver(shot1, kind);
+    const big = over.resize({ width: over.getSize().width * 4, quality: 'best' });
+    fs.writeFileSync(path.join(SHOT_DIR, `musicbg-rev-dynamic-${kind}-4x.png`), big.toPNG());
+    if (kind === 'light') bigLight = big;
+    report.chroma[`dynamic-${kind}`] = meanChroma(big, cardBoxFor(big, fallback.cardRect, fallback.pageWidth));
     const rows = {};
     for (const [name, rect] of Object.entries(dynamic.parts)) {
-      if (!rect) { rows[name] = null; continue; }
-      rows[name] = textPixelContrast(over, rect, scale, rect.css);
+      rows[name] = rect ? textPixelContrast(over, rect, scale, rect.css) : null;
     }
     report.contrast[kind] = rows;
-    console.log(`  ${kind.padEnd(5)} ` + Object.entries(rows)
-      .map(([k, v]) => `${k}=${v ? `${v.median}/${v.worst}` : 'n/a'}`).join(' '));
+    console.log(`  ${kind.padEnd(5)} kroma=${report.chroma[`dynamic-${kind}`]} `
+      + Object.entries(rows).map(([k, v]) => `${k}=${v ? `${v.median}/${v.worst}` : 'n/a'}`).join(' '));
   }
   const measured = Object.values(report.contrast).flatMap((row) => Object.values(row)).filter(Boolean);
   const bad = measured.filter((m) => m.median === null || m.median < 4.5 || m.worst < 4.6);
@@ -337,74 +370,85 @@ async function main() {
     measured.length >= 18 && bad.length === 0,
     `n=${measured.length} gagal=${JSON.stringify(bad)}`);
 
-  /* The rejected first attempt kept AA contrast but painted a grey panel
-     (card chroma 7.5). Guard the actual point of the feature: the card must
-     visibly carry the album colour, not merely survive the contrast check. */
-  const chroma = cardChroma(compositeOver(shot, 'light'), dynamic.cardRect, scale);
-  report.chroma = chroma;
-  check('kartu benar-benar berwarna (chroma >= 55, bukan panel abu-abu)',
-    chroma.pixels >= 1000 && chroma.chroma >= 55, JSON.stringify(chroma));
+  /* A late reply for another song is ignored. */
+  await pushColors(FAKE_TRACK, { c1: '#ff0000', c2: '#00ff00', c3: '#0000ff' });
+  await sleep(180);
+  const stale = await js(RECTS);
+  check('balasan warna untuk lagu lain diabaikan (title guard)',
+    stale.card.dynamic === 'true' && stale.card.vars[0] === dynamic.card.vars[0],
+    JSON.stringify(stale.card.vars));
 
-  /* A second real song: changing the title must drop the old glow before the
-     new lookup lands, then the new palette has to be the one that paints. */
+  /* Track 2: the title change must drop the old palette first. */
   await status({ mediaTitle: REAL_TRACK_2 });
   await sleep(320);
   const mid = await js(RECTS);
-  report.guards.titleChangeClears = mid.card;
-  check('ganti lagu: palet fallback lagu baru dipasang, warna lama tak terbawa',
+  report.guards.titleChange = mid.card;
+  check('ganti lagu: palet lama hilang, langsung ke fallback warna',
     mid.title === REAL_TRACK_2 && mid.card.dynamic === 'fallback'
-      && mid.card.vars.every((v) => /^#[0-9a-f]{6}$/i.test(v))
       && mid.card.vars[0] !== dynamic.card.vars[0],
-    JSON.stringify({ title: mid.title, dynamic: mid.card.dynamic, vars: mid.card.vars }));
-  if (second) {
-    const deepSecond = colors.toDeepPalette(second);
-    await pushColors(REAL_TRACK_2, deepSecond);
-    await sleep(300);
-    const track2 = await js(RECTS);
-    report.guards.secondTrack = track2.card;
-    check('lagu kedua: palet baru terpasang di kartu',
-      track2.card.dynamic === 'true' && track2.card.vars[0] === deepSecond.c1,
-      JSON.stringify(track2.card.vars));
-    const shot2 = await win.capturePage();
-    fs.writeFileSync(path.join(SHOT_DIR, 'musicbg-second-track-4x.png'),
-      compositeOver(shot2, 'light')
-        .resize({ width: shot2.getSize().width * 4, quality: 'best' }).toPNG());
-  }
+    JSON.stringify({ dynamic: mid.card.dynamic, vars: mid.card.vars }));
+  await pushColors(REAL_TRACK_2, deep2);
+  await sleep(300);
+  const track2 = await js(RECTS);
+  report.backgrounds.track2 = track2.card.bg;
+  report.guards.track2 = track2.card;
+  check('lagu kedua: palet dalam baru terpasang',
+    track2.card.dynamic === 'true' && track2.card.vars[0] === deep2.c1,
+    JSON.stringify(track2.card.vars));
+  const shot2 = await win.capturePage();
+  const big2 = compositeOver(shot2, 'light').resize({ width: shot2.getSize().width * 4, quality: 'best' });
+  fs.writeFileSync(path.join(SHOT_DIR, 'musicbg-rev-second-track-4x.png'), big2.toPNG());
+  report.chroma['second-track'] = meanChroma(big2, cardBoxFor(big2, fallback.cardRect, fallback.pageWidth));
 
-  /* Unknown song: null colours clear the glow. */
+  /* Null colours restore the coloured fallback, not a bare dark panel. */
   await pushColors(REAL_TRACK_2, null);
-  await sleep(220);
+  await sleep(240);
   const cleared = await js(RECTS);
   report.guards.nullColors = cleared.card;
-  check('lookup gagal: tetap berwarna lewat palet fallback hash',
-    cleared.card.dynamic === 'fallback' && cleared.card.vars.length === 3
-      && cleared.card.vars.every((v) => /^#[0-9a-f]{6}$/i.test(v)),
-    JSON.stringify(cleared.card.vars));
-  const fallbackShot = await win.capturePage();
-  fs.writeFileSync(path.join(SHOT_DIR, 'musicbg-fallback-4x.png'),
-    compositeOver(fallbackShot, 'light')
-      .resize({ width: fallbackShot.getSize().width * 4, quality: 'best' }).toPNG());
+  check('lookup gagal: kembali ke palet fallback berwarna',
+    cleared.card.dynamic === 'fallback' && cleared.card.bg === fallback.card.bg,
+    JSON.stringify({ dynamic: cleared.card.dynamic, vars: cleared.card.vars }));
+  const shotF = await win.capturePage();
+  const bigF = compositeOver(shotF, 'light').resize({ width: shotF.getSize().width * 4, quality: 'best' });
+  fs.writeFileSync(path.join(SHOT_DIR, 'musicbg-rev-fallback-4x.png'), bigF.toPNG());
+  report.chroma.fallback = meanChroma(bigF, cardBoxFor(bigF, fallback.cardRect, fallback.pageWidth));
 
-  /* Plain background must stay exactly as it was. */
+  const distinct = new Set([report.backgrounds.track1, report.backgrounds.track2,
+    report.backgrounds.fallback]);
+  check('3 lagu/state: background-image computed saling berbeda',
+    distinct.size === 3,
+    `track1=${report.backgrounds.track1.slice(0, 42)} | track2=${report.backgrounds.track2.slice(0, 42)}`
+    + ` | fallback=${report.backgrounds.fallback.slice(0, 42)}`);
+
+  /* Plain must stay exactly as it was, with no dynamic variables. */
   await settings({ musicCardBackground: 'plain' });
   await status({ musicCardBackground: 'plain' });
   await sleep(240);
-  await pushColors(REAL_TRACK_2, palette);
-  await sleep(240);
+  const plainBase = await js(RECTS);
+  await pushColors(REAL_TRACK_2, deep);
+  await sleep(220);
   const plain = await js(RECTS);
   report.guards.plain = plain.card;
-  check('setting plain: tidak ada warna dinamis sama sekali',
+  check('setting plain: tidak ada warna dinamis dan latar tidak berubah',
     plain.musicBg === 'plain' && plain.card.dynamic === 'false'
-      && plain.card.vars.every((v) => v === '') && !plain.card.bg.includes('radial-gradient'),
-    JSON.stringify({ musicBg: plain.musicBg, dynamic: plain.card.dynamic, bg: plain.card.bg.slice(0, 60) }));
+      && plain.card.vars.every((v) => v === '') && plain.card.bg === plainBase.card.bg,
+    JSON.stringify({ dynamic: plain.card.dynamic, vars: plain.card.vars }));
+
+  /* Chroma table: the reference and all three card states, same ruler. */
+  const refImg = flattenOverWhite(nativeImage.createFromPath(REF_PATH));
+  report.chroma.reference = meanChroma(refImg, REF_BOX);
+  console.log(`  KROMA referensi=${report.chroma.reference} bad guy=${report.chroma['dynamic-light']}`
+    + ` Levitating=${report.chroma['second-track']} fallback=${report.chroma.fallback}`);
+  const cardStates = ['dynamic-light', 'second-track', 'fallback'];
+  check(`kroma area kartu >= ${CHROMA_TARGET} untuk ke-3 state (ruler sama dengan referensi)`,
+    cardStates.every((k) => report.chroma[k] !== null && report.chroma[k] >= CHROMA_TARGET),
+    JSON.stringify(Object.fromEntries(cardStates.map((k) => [k, report.chroma[k]]))));
+  report.compare = sideBySide(REF_PATH, bigLight,
+    cardBoxFor(bigLight, fallback.cardRect, fallback.pageWidth), 'musicbg-rev-compare.png');
 
   check('tidak ada error konsol', consoleErrors.length === 0, JSON.stringify(consoleErrors));
   fs.writeFileSync(path.join(SHOT_DIR, 'musicbg-metrics.json'), JSON.stringify(report, null, 2), 'utf8');
   win.destroy();
-}
-
-function getArtFallback(fallback) {
-  return fallback.card.art;
 }
 
 app.on('window-all-closed', (event) => event.preventDefault());

@@ -7,7 +7,7 @@ const PAGES = ['General', 'Appearance', 'Robot', 'Island', 'Panels', 'Keys',
   'Music', 'Meetings', 'Calendar', 'Worship', 'Capture', 'About'];
 
 const SURFACES = ['Black', 'Pure black', 'Graphite', 'Glass', 'Acrylic', 'Rosé', 'Lavender', 'Peach', 'Sakura', 'Candy glass', 'Matcha', 'Aurora', 'Dusk', 'Neon', 'Liquid glass', 'Translucent'];
-const GLASS_SURFACES = ['Liquid glass', 'Translucent'];
+const GLASS_SURFACES = ['Liquid glass', 'Translucent', 'Candy glass'];
 const PROGRESS_STYLES = ['Wave', 'Pixels', 'Comet', 'Song shape', 'Simple', 'Hearts'];
 const ACCENTS = ['#e9eef7', '#ffffff', '#e9c46a', '#6ea8ff', '#b48cff', '#ff6b6b', '#ff9c6b', '#6ee7a0', '#46e0dc', '#ff8fc7', '#c3b1ff', '#ffcba4', '#ffd1dc'];
 const ROBOT_EYES = ['#46e0dc', '#6ea8ff', '#b48cff', '#ff8fc7', '#e9c46a', '#ff9c6b', '#ffffff'];
@@ -933,7 +933,7 @@ function renderPage(): void {
     add(row('Abaikan aplikasi', 'Pisahkan dengan koma; nama proses atau judul jendela.', csvField('meetingIgnoreApps', 'Discord.exe, Game launch')));
     add(note('Saat rapat: notifikasi ditahan, kode OTP/verifikasi tetap lewat, dan musik yang sedang diputar dijeda. Windows tidak membuka status mikrofon, jadi deteksi memakai judul jendela.'));
     add(section('Notifikasi'));
-    add(row('Klik notifikasi membuka aplikasi', 'Notifikasi WhatsApp/Discord/Telegram dkk. membuka aplikasinya. Nama lain membuka pencarian web; matikan bila tidak mau.', toggle('noticeOpenLinks')));
+    add(row('Klik notifikasi membuka aplikasi', 'Izinkan klik notifikasi dan tombol Balas membuka aplikasi sumber. Dimatikan: keduanya tidak membuka apa pun.', toggle('noticeOpenLinks')));
     add(row('Unduhan selesai', 'Beri tahu saat berkas baru muncul di folder Downloads.', toggle('notifyDownloads')));
     add(row('Internet putus / pulih', 'Pantau koneksi dan beri tahu saat berubah.', toggle('notifyInternet')));
     add(row('Tawarkan lanjut musik', 'Setelah layar dikunci cukup lama, tawarkan memutar lagi.', toggle('notifyResumeMusic')));

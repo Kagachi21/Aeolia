@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 export type Site = { id: string; name: string; url: string };
 export type ShelfItem = { id: string; name: string; path: string; size: number; at: number };
 export type ClipItem = { id: string; kind: 'text' | 'image' | 'file'; text: string; at: number };
-export type Notice = { id: string; app: string; title: string; body: string; at: number };
+export type Notice = { id: string; app: string; title: string; body: string; at: number; aumid?: string };
 export type Task = { id: string; name: string; done: boolean };
 
 export type Store = {
@@ -26,6 +26,9 @@ export type Store = {
   eyeBreakMin: number;
   eyeBreakSound: boolean;
   prayerCity: string;
+  /** One-shot startup cat greeting. Persisted so it plays once per install,
+      not once per launch. See the migration in load(). */
+  greetingSeen: boolean;
 };
 
 const DEFAULTS: Store = {
@@ -50,6 +53,7 @@ const DEFAULTS: Store = {
   eyeBreakMin: 0,
   eyeBreakSound: true,
   prayerCity: 'Jakarta',
+  greetingSeen: false,
 };
 
 let store: Store | null = null;
@@ -87,7 +91,15 @@ export function load(): Store {
         waterDay: typeof raw.waterDay === 'string' ? raw.waterDay : '',
         eyeBreakSound: raw.eyeBreakSound !== false,
         prayerCity: typeof raw.prayerCity === 'string' ? raw.prayerCity : 'Jakarta',
+        // Migration: an existing state.json predates the first-run flag. The
+        // user still owes himself that first greeting, so an upgrading install
+        // gets exactly one after the next restart. A genuinely new install has
+        // NO state.json at all and keeps DEFAULTS.greetingSeen=false as well.
+        // Once the renderer has played it, patch() writes true and later
+        // launches stay quiet.
+        greetingSeen: typeof raw.greetingSeen === 'boolean' ? raw.greetingSeen : false,
       };
+      if (typeof raw.greetingSeen !== 'boolean') persist();
       return store;
     }
   } catch (err) {
@@ -147,9 +159,9 @@ export function addClip(text: string): Store | null {
   return s;
 }
 
-export function pushNotice(appName: string, title: string, body: string): Store {
+export function pushNotice(appName: string, title: string, body: string, aumid?: string): Store {
   const s = load();
-  s.notices.unshift({ id: uid(), app: appName, title, body, at: Date.now() });
+  s.notices.unshift({ id: uid(), app: appName, title, body, at: Date.now(), aumid });
   s.notices = s.notices.slice(0, MAX_NOTICES);
   persist();
   return s;
