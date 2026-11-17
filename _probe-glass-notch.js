@@ -324,21 +324,22 @@ const COLOURS = `(() => {
   const row = panel ? panel.querySelector('.row, .site, button') : null;
   /* Per element probes: every rule the Liquid glass secondary ink override
      touches needs its own measured ratio, not one average. */
-  const parts = {
-    title: col(document.getElementById('musicTitle')),
-    artist: col(document.getElementById('musicSub')),
-    timeCur: col(document.getElementById('musicTimeCur')),
-    timeEnd: col(document.getElementById('musicTimeEnd')),
-    lyricActive: col(document.querySelector('.lyric-line.active')),
-    lyricIdle: col(document.querySelector('.lyric-line:not(.active)')),
-    lyricEmpty: col(document.querySelector('.lyric-empty')),
-    hint: col(document.getElementById('lyricRate') || hint),
-    rowHead: col(document.querySelector('.row-head')),
-    rowTime: col(document.querySelector('.row .time')),
-    stat: col(document.querySelector('.stat i')),
-    calAgenda: col(document.querySelector('.cal-agenda span')),
-    empty: col(document.querySelector('.empty')),
+  const partEls = {
+    title: document.getElementById('musicTitle'),
+    artist: document.getElementById('musicSub'),
+    timeCur: document.getElementById('musicTimeCur'),
+    timeEnd: document.getElementById('musicTimeEnd'),
+    lyricActive: document.querySelector('.lyric-line.active'),
+    lyricIdle: document.querySelector('.lyric-line:not(.active)'),
+    lyricEmpty: document.querySelector('.lyric-empty'),
+    hint: document.getElementById('lyricRate') || hint,
+    rowHead: document.querySelector('.row-head'),
+    rowTime: document.querySelector('.row .time'),
+    stat: document.querySelector('.stat i'),
+    calAgenda: document.querySelector('.cal-agenda span'),
+    empty: document.querySelector('.empty'),
   };
+  const parts = Object.fromEntries(Object.entries(partEls).map(([k, el]) => [k, col(el)]));
   return {
     clock: col(document.getElementById('clock')),
     island: col(island),
@@ -354,7 +355,7 @@ const COLOURS = `(() => {
       };
       return {
         clock: box(document.getElementById('clock')),
-        lyricActive: box(document.querySelector('.lyric-line.active')),
+        ...Object.fromEntries(Object.entries(partEls).map(([k, el]) => [k, box(el)])),
       };
     })(),
     accent: getComputedStyle(island).getPropertyValue('--accent').trim(),
@@ -508,10 +509,30 @@ async function main() {
           ? textPixelContrast(cardOver, colours.rects.lyricActive, cardScale,
             colours.parts.lyricActive) : null;
 
+        /* Since 798e7e1 the music card paints its OWN dark, album-coloured
+           gradient on top of the light glass pane. Comparing its ink to the
+           whole-window mean measures the pane, not the backdrop behind the
+           glyph, and produced fake 1.04-1.54 ratios. Measure the local ring
+           around each card-text box with the same ruler as the ink audit.
+           Parts in hidden panels are not "card text"; they are audited in
+           their own tabs below and are recorded here as explicitly deferred,
+           never silently dropped. */
+        const CARD_PARTS = ['title', 'artist', 'timeCur', 'timeEnd',
+          'lyricActive', 'lyricIdle', 'hint'];
         const rows = {};
-        for (const [part, css] of Object.entries(colours.parts)) {
-          const ratio = contrast(css, cardMean);
-          if (ratio !== null) rows[part] = { colour: css, ratio };
+        const deferred = [];
+        for (const part of CARD_PARTS) {
+          const css = colours.parts[part];
+          const rect = colours.rects[part];
+          if (!css || !rect || rect.w < 1 || rect.h < 1) {
+            deferred.push(part);
+            continue;
+          }
+          const m = textPixelContrast(cardOver, rect, cardScale, css);
+          rows[part] = {
+            colour: css, ratio: m.ratioCss, worst: m.ratioWorst,
+            surface: m.surface, inkPixels: m.inkCount, boxPixels: m.boxPixels,
+          };
         }
         report.glass[key][lk][kind] = {
           glassA: colours.glassA,
@@ -522,12 +543,55 @@ async function main() {
           clockMediaPixels,
           lyricPixels,
           cardParts: rows,
+          cardPartsDeferred: deferred,
         };
         console.log(`  ${surface.padEnd(12)} a=${colours.glassA.padEnd(4)} ${kind.padEnd(5)}`
           + ` pill ${hex(pillMean)} card ${hex(cardMean)} clock ${report.glass[key][lk][kind].clock.ratio}`
           + ` clockPx ${clockPixels ? clockPixels.ratioCss : '-'}/${clockPixels ? clockPixels.ratioWorst : '-'}` + ` mediaClockPx ${clockMediaPixels ? clockMediaPixels.ratioCss : '-'}/${clockMediaPixels ? clockMediaPixels.ratioWorst : '-'}` + ` lyricPx ${lyricPixels ? lyricPixels.ratioWorst : '-'}/${lyricPixels ? lyricPixels.ratioCss : '-'}`
           + ` min-part ${Math.min(...Object.values(rows).map((r) => r.ratio))}`);
       }
+    }
+  }
+
+  /* The empty-lyric line only exists when there is no LRC timeline, so it
+     cannot share the capture above (which intentionally has one active line).
+     Measure it locally in that state for every backdrop and level instead of
+     treating a hidden box as an unmeasurable failure. */
+  report.lyricEmpty = {};
+  for (const level of LEVELS) {
+    const lk = `l${level}`;
+    await settings('Liquid glass', level);
+    await sleep(160);
+    for (const kind of ['light', 'dark', 'busy']) {
+      await status({ ...base, state: 'open', surface: 'Liquid glass', glassLevel: level,
+        media: true, mediaTitle: TRACK });
+      await sleep(180);
+      await js(`document.querySelector('.tab[data-tab="music"]').click(); true`);
+      await sleep(200);
+      await js(`window.probe.emit('lyrics', ${JSON.stringify({ title: TRACK, lrc: '' })}); true`);
+      await sleep(560);
+      const wantedEmpty = await js(`(() => {
+        const c = window.probe.calls().filter((x) => x.kind === 'setCardHeight');
+        return c.length ? c[c.length - 1].payload : null;
+      })()`);
+      if (typeof wantedEmpty === 'number' && wantedEmpty > 40) {
+        win.setBounds(boundsFor('open', settingsFor('open'), Math.round(wantedEmpty)));
+        await sleep(280);
+      }
+      const shot = await win.capturePage();
+      const over = compositeOver(shot, kind);
+      const cols = await js(COLOURS);
+      const rect = cols.rects.lyricEmpty;
+      if (!cols.parts.lyricEmpty || !rect || rect.w < 1 || rect.h < 1) {
+        report.lyricEmpty[`${lk}/${kind}`] = null;
+        continue;
+      }
+      const scale = shot.getSize().width / (await js('window.innerWidth'));
+      const m = textPixelContrast(over, rect, scale, cols.parts.lyricEmpty);
+      report.lyricEmpty[`${lk}/${kind}`] = {
+        colour: cols.parts.lyricEmpty, ratio: m.ratioCss, worst: m.ratioWorst,
+        surface: m.surface, inkPixels: m.inkCount, boxPixels: m.boxPixels,
+      };
     }
   }
 
@@ -587,10 +651,33 @@ async function main() {
           if (ratio < 4.5) failures.push(`${key}/${lk}/${kind}/${what}=${ratio}`);
         };
         push('clock', cell.clock.ratio);
-        for (const [part, row] of Object.entries(cell.cardParts)) push(part, row.ratio);
+        for (const [part, row] of Object.entries(cell.cardParts)) {
+          /* A null ratio is NOT a pass: the glyph or its ring had no pixels. */
+          if (row.ratio === null) failures.push(`${key}/${lk}/${kind}/${part}=TIDAK TERUKUR`);
+          else push(part, row.ratio);
+        }
+        /* Music-card parts without a rendered box cannot be scored against a
+           local backdrop here. Keep them as explicit hard failures; the
+           per-tab ink audit below is a separate check, not an excuse. */
+        for (const part of cell.cardPartsDeferred || []) {
+          failures.push(`${key}/${lk}/${kind}/${part}=TIDAK TERUKUR (kotak tidak ada)`);
+        }
       }
     }
   }
+  for (const [where, row] of Object.entries(report.lyricEmpty || {})) {
+    const [lk, kind] = where.split('/');
+    if (!row || row.ratio === null) {
+      failures.push(`liquid/${where}/lyricEmpty=TIDAK TERUKUR`);
+      continue;
+    }
+    all.push({ key: 'liquid', lk, kind, what: 'lyricEmpty', ratio: row.ratio });
+    if (row.ratio < 4.5) failures.push(`liquid/${where}/lyricEmpty=${row.ratio}`);
+  }
+  const deferredCounts = Object.values(report.glass.liquid).flatMap((lk) => Object.values(lk))
+    .flatMap((cell) => cell.cardPartsDeferred || []);
+  console.log(`  Bagian kartu tanpa kotak di pane audit: ${deferredCounts.length} `
+    + `[${[...new Set(deferredCounts)].join(', ') || 'none'}] (diperiksa terpisah di audit ink per-tab);`);
   const liquidFails = failures.filter((f) => f.startsWith('liquid/'));
   const minLiquid = Math.min(...all.filter((r) => r.key === 'liquid').map((r) => r.ratio));
   check('Liquid glass: setiap teks (pill + kartu) >= 4.5:1 di semua latar dan level',

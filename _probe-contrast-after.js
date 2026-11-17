@@ -160,28 +160,26 @@ const TEXT_BOXES = `(ids) => {
     }
     return +o.toFixed(3);
   };
-  /* getComputedStyle().color is not always rgb(): a color-mix() resolves to
-     color(srgb r g b), and an unparsed value used to fall back to black, which
-     produced a real-looking ratio from no data. Parse both shapes and flag
-     anything else so it can never pass silently. */
+  /* getComputedStyle().color hands back the colour function verbatim for
+     anything outside legacy sRGB: color(srgb ...) after color-mix(), oklch()
+     for the active lyric. A hand-written parser has to know every colour space
+     and can silently fall back to black. Paint into a 1x1 canvas instead: the
+     browser resolves any computed colour to plain sRGB bytes, and a sentinel
+     that survives means the value was rejected. Anything still unparsed is a
+     hard failure further down, never a reported ratio. */
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 1;
+  const cx = cv.getContext('2d', { willReadFrequently: true });
   const parseColor = (css) => {
     const s = String(css || '').trim();
-    const rgb = /rgba?\\(([^)]+)\\)/.exec(s);
-    if (rgb) {
-      const p = rgb[1].split(/[,\\s\\/]+/).filter(Boolean).map(parseFloat);
-      return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1, format: 'rgb' };
-    }
-    const col = /color\\(\\s*([a-z0-9-]+)\\s+([^)]+)\\)/i.exec(s);
-    if (col) {
-      const num = (v) => (v.endsWith('%') ? parseFloat(v) / 100 : parseFloat(v));
-      const v = col[2].split(/[\\s\\/]+/).filter(Boolean);
-      const r = num(v[0]), g = num(v[1]), b = num(v[2]);
-      if ([r, g, b].every((n) => Number.isFinite(n))) {
-        return { r: r * 255, g: g * 255, b: b * 255,
-          a: v.length > 3 ? num(v[3]) : 1, format: 'color(' + col[1].toLowerCase() + ')' };
-      }
-    }
-    return { r: null, g: null, b: null, a: 1, format: 'unparsed' };
+    if (!s) return { r: null, g: null, b: null, a: 1, format: 'unparsed' };
+    cx.fillStyle = '#ff00fe';
+    cx.fillStyle = s;
+    cx.fillRect(0, 0, 1, 1);
+    const d = cx.getImageData(0, 0, 1, 1).data;
+    const rejected = d[0] === 255 && d[1] === 0 && d[2] === 254 && !/ff00fe/i.test(s);
+    if (rejected) return { r: null, g: null, b: null, a: 1, format: 'unparsed' };
+    return { r: d[0], g: d[1], b: d[2], a: +(d[3] / 255).toFixed(3), format: 'canvas' };
   };
   const one = (label, el) => {
     if (!el) return { label, missing: true };
