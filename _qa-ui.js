@@ -30,12 +30,20 @@ const initial = {
 
 const results = [];
 const consoleMessages = [];
+const exceptionStacks = [];
 const check = (name, ok, detail) => {
   results.push({ name, ok: Boolean(ok) });
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail === undefined ? '' : '  :: ' + detail}`);
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const js = (win, code) => win.webContents.executeJavaScript(code);
+const js = async (win, code) => {
+  try {
+    return await win.webContents.executeJavaScript(code);
+  } catch (err) {
+    console.log('JS_FAIL', String(code).slice(0, 220));
+    throw err;
+  }
+};
 
 function makeWindow(width, height) {
   const win = new BrowserWindow({
@@ -46,9 +54,28 @@ function makeWindow(width, height) {
       backgroundThrottling: false,
     },
   });
-  win.webContents.on('console-message', (_e, level, message) => {
-    consoleMessages.push({ level, message });
+  win.webContents.on('console-message', (_e, level, message, line, sourceId) => {
+    consoleMessages.push({ level, message, line, sourceId });
   });
+  /* Electron's deprecated console-message event reports an uncaught error at
+     the document URL, not the throwing line. CDP gives the real stack so a
+     null element can be fixed at its source instead of guessed. */
+  try {
+    const dbg = win.webContents.debugger;
+    dbg.attach();
+    void dbg.send('Runtime.enable');
+    dbg.on('Runtime.exceptionThrown', (event) => {
+      const detail = event && event.exceptionDetails;
+      if (!detail) return;
+      const description = detail.exception && detail.exception.description
+        ? detail.exception.description : detail.text;
+      exceptionStacks.push({
+        message: description,
+        url: detail.url,
+        line: (detail.lineNumber || 0) + 1,
+      });
+    });
+  } catch { /* debugger unavailable: console-message still reports the error */ }
   return win;
 }
 
@@ -112,8 +139,20 @@ async function rendererProbe() {
   await sleep(1550);
   const settled = await js(win, `(() => { const r = document.getElementById('island');
     return { greeting: r.dataset.greeting, catPos: r.dataset.catPos }; })()`);
-  check('Regresi greeting selesai lalu kucing pindah ke kanan',
-    settled.greeting === 'false' && settled.catPos === 'right', JSON.stringify(settled));
+  /* catIdleCenter means "rest in the centre when idle", so the seeded true
+     keeps the cat centred after the greeting. A false value is the contract
+     that sends it to the right rail. Both halves are checked. */
+  check('Regresi greeting selesai + catIdleCenter:true -> kucing tetap di tengah',
+    settled.greeting === 'false' && settled.catPos === 'center', JSON.stringify(settled));
+  await js(win, `window.probe.emit('settings', { catIdleCenter: false }); true`);
+  await sleep(260);
+  const settledRight = await js(win, `(() => { const r = document.getElementById('island');
+    return { greeting: r.dataset.greeting, catPos: r.dataset.catPos,
+      idleCenter: r.dataset.catIdleCenter }; })()`);
+  check('Regresi catIdleCenter:false setelah greeting -> kucing pindah ke kanan',
+    settledRight.greeting === 'false' && settledRight.catPos === 'right'
+      && settledRight.idleCenter === 'false', JSON.stringify(settledRight));
+  await js(win, `window.probe.emit('settings', { catIdleCenter: true }); true`);
 
   const structure = await js(win, `(() => {
     const scroll = document.getElementById('tabsScroll');
@@ -551,7 +590,8 @@ async function rendererProbe() {
     glass.surface === 'Translucent' && glass.a === '0.7', JSON.stringify(glass));
   await js(win, `window.probe.emit('settings', { surface: 'Black', glassLevel: 55 }); true`);
 
-  /* ---- notice reply: chat rows get an inline, honest reply flow ---- */
+  /* ---- notice reply: the row only has a toggle; the reply itself happens
+     in the source app. There is no inline input/send button to drive. ---- */
   await js(win, `window.probe.emit('card', { notices: [{ id: 'rp1', app: 'WhatsApp', title: 'Bila', body: 'duren :)', at: ${Date.now()} }] }); true`);
   await sleep(140);
   const replyFlow = await js(win, `(() => {
@@ -561,22 +601,23 @@ async function rendererProbe() {
     const toggle = row.querySelector('.notice-reply-toggle');
     if (!toggle) return { found: true, toggle: false };
     toggle.click();
-    const input = row.querySelector('.notice-reply-input');
-    input.value = 'oke bentar';
-    row.querySelector('.notice-reply-send').click();
-    return { found: true, toggle: true, openedInput: !row.querySelector('.notice-reply').hidden };
+    return { found: true, toggle: true, oldInput: !!row.querySelector('.notice-reply-input') };
   })()`);
-  await sleep(120);
+  await sleep(160);
   const replyAfter = await js(win, `(() => {
     const row = Array.from(document.querySelectorAll('#noticeList .notice-row'))
       .find((r) => r.querySelector('.title')?.textContent === 'Bila');
     return { note: row?.querySelector('.notice-reply-note')?.textContent ?? '',
       calls: window.probe.calls().filter((c) => c.kind === 'noticeReply') };
   })()`);
-  check('balas notifikasi WhatsApp: input muncul, kirim -> clipboard + catatan jujur',
-    replyFlow.found && replyFlow.toggle && replyFlow.openedInput
-      && replyAfter.calls.length === 1 && replyAfter.calls[0].payload.text === 'oke bentar'
-      && replyAfter.note.includes('disalin'), JSON.stringify({ replyFlow, note: replyAfter.note }));
+  check('balas notifikasi WhatsApp: toggle -> noticeReply(app, body, teks kosong) + petunjuk sumber',
+    replyFlow.found && replyFlow.toggle && replyFlow.oldInput === false
+      && replyAfter.calls.length === 1
+      && replyAfter.calls[0].payload.app === 'WhatsApp'
+      && replyAfter.calls[0].payload.body === 'duren :)'
+      && replyAfter.calls[0].payload.text === ''
+      && replyAfter.note.includes('ketik dan kirim di sana'),
+    JSON.stringify({ replyFlow, calls: replyAfter.calls, note: replyAfter.note }));
   await js(win, `window.probe.emit('card', { notices: [] }); true`);
 
   /* ---- regression: old features still alive ---- */
@@ -973,7 +1014,10 @@ async function firstRunProbe() {
   w1.destroy();
 
   /* (b) second launch: already shown -> no greeting, cat settles at once. */
-  const w2 = launch({ card: { greetingSeen: true } });
+  /* Same stale contract as the greeting block above: "cat right" is only the
+     expected idle position when catIdleCenter is false. Isolate that knob for
+     the first-run cases, which are about greeting flags, not idle position. */
+  const w2 = launch({ card: { greetingSeen: true }, settings: { catIdleCenter: false } });
   await boot(w2);
   const b = await snap(w2);
   check('FirstRun (b) peluncuran kedua tidak menyapa, kucing langsung ke kanan',
@@ -987,7 +1031,7 @@ async function firstRunProbe() {
   w2.destroy();
 
   /* (d) catGreeting=false: never arms. */
-  const w3 = launch({ settings: { catGreeting: false }, card: {} });
+  const w3 = launch({ settings: { catGreeting: false, catIdleCenter: false }, card: {} });
   await boot(w3);
   const d = await snap(w3);
   check('FirstRun (d) catGreeting=false tidak pernah menyapa',
@@ -1008,7 +1052,7 @@ app.whenReady().then(async () => {
   }
   const errors = consoleMessages.filter((m) => m.level >= 2);
   check('0 console error di renderer & Settings', errors.length === 0,
-    JSON.stringify(errors.slice(0, 6)));
+    JSON.stringify({ errors: errors.slice(0, 6), stacks: exceptionStacks.slice(0, 4) }));
   const failed = results.filter((r) => !r.ok);
   console.log(`\nQA_UI ${results.length - failed.length}/${results.length} PASS`);
   if (failed.length) console.log('FAILED: ' + failed.map((f) => f.name).join(' | '));
