@@ -149,20 +149,6 @@ function sideBySide(refPath, ourImg, ourBox, outName) {
 }
 
 const hex = (c) => `#${[c.r, c.g, c.b].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
-const parseRgb = (css) => {
-  const s = String(css || '');
-  const m = /rgba?\(([^)]+)\)/.exec(s);
-  if (m) {
-    const p = m[1].split(',').map((v) => Number(v.trim()));
-    return { r: p[0], g: p[1], b: p[2] };
-  }
-  const c = /color\(srgb\s+([^)]+)\)/.exec(s);
-  if (c) {
-    const p = c[1].trim().split(/[\s/]+/).map((v) => Number(v));
-    return { r: Math.round(p[0] * 255), g: Math.round(p[1] * 255), b: Math.round(p[2] * 255) };
-  }
-  return null;
-};
 const lum = (c) => {
   const f = (v) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; };
   return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b);
@@ -176,7 +162,10 @@ const medianOf = (v) => {
 };
 
 /** Ring median + brightest 5% ring pixel, the same ruler as the glass audit. */
-function textPixelContrast(img, rect, scale, textCss) {
+/** `ink` is [r,g,b,a] resolved by the renderer's own 1x1 canvas, so modern
+    colour syntax (oklch/relative oklch in .lyric-line.active) is measured with
+    the same engine that paints it instead of a Node-side regex guess. */
+function textPixelContrast(img, rect, scale, ink) {
   const size = img.getSize();
   const bmp = img.toBitmap();
   const x0 = Math.round(rect.x * scale);
@@ -200,18 +189,34 @@ function textPixelContrast(img, rect, scale, textCss) {
   };
   ring.sort((a, b) => lum(a) - lum(b));
   const worstSurface = ring.length ? ring[Math.floor(ring.length * 0.95)] : surface;
-  const ink = parseRgb(textCss);
-  if (!ink || ring.length < 150) return { surface: hex(surface), ring: ring.length, median: null, worst: null };
-  return { surface: hex(surface), ring: ring.length, median: ratio(ink, surface), worst: ratio(ink, worstSurface) };
+  const resolved = Array.isArray(ink) && ink[3] >= 250
+    ? { r: ink[0], g: ink[1], b: ink[2] } : null;
+  if (!resolved || ring.length < 150) return { surface: hex(surface), ring: ring.length, median: null, worst: null };
+  return {
+    surface: hex(surface), ring: ring.length,
+    median: ratio(resolved, surface), worst: ratio(resolved, worstSurface),
+  };
 }
 
 const RECTS = `(() => {
+  /* The browser is the colour oracle: a 1x1 canvas resolves rgb(), color(srgb)
+     and oklch()/relative oklch() identically to what Chromium actually paints. */
+  const resolveInk = (css) => {
+    const cv = document.createElement('canvas');
+    cv.width = 1; cv.height = 1;
+    const ctx = cv.getContext('2d', { willReadFrequently: true });
+    ctx.clearRect(0, 0, 1, 1);
+    ctx.fillStyle = css;
+    ctx.fillRect(0, 0, 1, 1);
+    return Array.from(ctx.getImageData(0, 0, 1, 1).data);
+  };
   const box = (sel) => {
     const el = typeof sel === 'string' ? document.querySelector(sel) : sel;
     if (!el) return null;
     const r = el.getBoundingClientRect();
     if (r.width < 1 || r.height < 1) return null;
-    return { x: r.x, y: r.y, w: r.width, h: r.height, css: getComputedStyle(el).color };
+    const css = getComputedStyle(el).color;
+    return { x: r.x, y: r.y, w: r.width, h: r.height, css, ink: resolveInk(css) };
   };
   const card = document.getElementById('musicCard');
   const cs = getComputedStyle(card);
@@ -358,7 +363,7 @@ async function main() {
     report.chroma[`dynamic-${kind}`] = meanChroma(big, cardBoxFor(big, fallback.cardRect, fallback.pageWidth));
     const rows = {};
     for (const [name, rect] of Object.entries(dynamic.parts)) {
-      rows[name] = rect ? textPixelContrast(over, rect, scale, rect.css) : null;
+      rows[name] = rect ? textPixelContrast(over, rect, scale, rect.ink) : null;
     }
     report.contrast[kind] = rows;
     console.log(`  ${kind.padEnd(5)} kroma=${report.chroma[`dynamic-${kind}`]} `
@@ -405,13 +410,22 @@ async function main() {
   await sleep(240);
   const cleared = await js(RECTS);
   report.guards.nullColors = cleared.card;
-  check('lookup gagal: kembali ke palet fallback berwarna',
-    cleared.card.dynamic === 'fallback' && cleared.card.bg === fallback.card.bg,
-    JSON.stringify({ dynamic: cleared.card.dynamic, vars: cleared.card.vars }));
+  /* The fallback is title-hash keyed (renderer.ts FALLBACK_PALETTES /
+     applyFallbackColors), so equality with the INITIAL fallback background is
+     not the contract. What must hold: fallback marker, three valid hex vars,
+     a real radial-gradient background, and a still-coloured card. */
   const shotF = await win.capturePage();
   const bigF = compositeOver(shotF, 'light').resize({ width: shotF.getSize().width * 4, quality: 'best' });
   fs.writeFileSync(path.join(SHOT_DIR, 'musicbg-rev-fallback-4x.png'), bigF.toPNG());
   report.chroma.fallback = meanChroma(bigF, cardBoxFor(bigF, fallback.cardRect, fallback.pageWidth));
+
+  check('lookup gagal: kembali ke palet fallback berwarna',
+    cleared.card.dynamic === 'fallback'
+      && cleared.card.vars.every((v) => /^#[0-9a-f]{6}$/i.test(v))
+      && cleared.card.bg.includes('radial-gradient')
+      && report.chroma.fallback >= CHROMA_TARGET,
+    JSON.stringify({ dynamic: cleared.card.dynamic, vars: cleared.card.vars,
+      bg: cleared.card.bg.slice(0, 42), chroma: report.chroma.fallback }));
 
   const distinct = new Set([report.backgrounds.track1, report.backgrounds.track2,
     report.backgrounds.fallback]);
