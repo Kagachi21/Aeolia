@@ -2160,8 +2160,8 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
    reads as the album instead of a neutral panel. The #island prefix is
    required: the Liquid glass and Translucent surfaces also set .music-card's
    background with an id selector. Translucent keeps its light pane. */
-#island:not(:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"])) .music-card[data-bg="album"][data-dynamic="true"],
-#island:not(:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"])) .music-card[data-bg="album"][data-dynamic="fallback"] {
+#island:not([data-surface="Translucent"]) .music-card[data-bg="album"][data-dynamic="true"],
+#island:not([data-surface="Translucent"]) .music-card[data-bg="album"][data-dynamic="fallback"] {
   background:
     radial-gradient(130% 130% at 6% -10%,
       color-mix(in srgb, var(--mc-1, #8a3b2a) 92%, transparent), transparent 68%),
@@ -2173,20 +2173,26 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
       #0b0d12 100%);
   box-shadow: 0 10px 34px color-mix(in srgb, var(--mc-1, #8a3b2a) 28%, transparent);
 }
-#island:not(:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"])) .music-card[data-bg="album"][data-dynamic="true"] .music-art,
-#island:not(:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"])) .music-card[data-bg="album"][data-dynamic="fallback"] .music-art {
+#island:not([data-surface="Translucent"]) .music-card[data-bg="album"][data-dynamic="true"] .music-art,
+#island:not([data-surface="Translucent"]) .music-card[data-bg="album"][data-dynamic="fallback"] .music-art {
   background: linear-gradient(160deg,
     var(--mc-1, #8a3b2a), var(--mc-2, #6b2350) 70%, var(--mc-3, #241436));
 }
 /* Local scrim only behind the two text rows, so the coloured glow stays
    visible everywhere else on the card. */
-#island:not(:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"])) .music-card[data-dynamic="true"] .music-now,
-#island:not(:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"])) .music-card[data-dynamic="fallback"] .music-now,
-#island:not(:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"])) .music-card[data-dynamic="true"] .music-times,
-#island:not(:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"])) .music-card[data-dynamic="fallback"] .music-times {
+#island:not([data-surface="Translucent"]) .music-card[data-dynamic="true"] .music-now,
+#island:not([data-surface="Translucent"]) .music-card[data-dynamic="fallback"] .music-now,
+#island:not([data-surface="Translucent"]) .music-card[data-dynamic="true"] .music-times,
+#island:not([data-surface="Translucent"]) .music-card[data-dynamic="fallback"] .music-times {
   background: linear-gradient(90deg, rgba(6, 8, 12, 0.28), rgba(6, 8, 12, 0));
   border-radius: 8px;
 }
+/* The light-pane ink pass above also paints the album-coloured card's rows
+   dark (#10141c / #4a5364), which are unreadable on the dark cover gradient.
+   Restore the dark-surface ink on those two rows only; the pane ink rules stay
+   untouched everywhere else, and Translucent keeps its light pane. */
+#island:is([data-surface="Liquid glass"], [data-surface="Candy glass"]) .music-card:is([data-dynamic="true"], [data-dynamic="fallback"]) .music-meta strong { color: #f2f5ff; }
+#island:is([data-surface="Liquid glass"], [data-surface="Candy glass"]) .music-card:is([data-dynamic="true"], [data-dynamic="fallback"]) :is(.music-meta span, .music-times) { color: #dbe3f2; }
 .music-now { display: flex; align-items: center; gap: 8px; }
 /* Album-style art: a big gradient square with a pinned note badge. The
    gradient comes from artGradientClass (g0..g5) so one song keeps one look. */
