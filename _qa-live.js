@@ -248,13 +248,20 @@ async function run() {
       && JSON.stringify(afterCopy.notices) === historicNotices,
     `clips=${clipsBefore}->${afterCopy.clips.length} notices=${noticesBefore}->${afterCopy.notices.length} top=${afterCopy.clips[0]?.text}`);
 
-  /* real notification channels still work */
+  /* store.ts:61-62 sets MAX_NOTICES=24 and pushNotice() (store.ts:162-166)
+     unshifts then slices to 24 on EVERY insert. The seed here is 27 entries,
+     so seedNoticesCount + 1 is unreachable by design; the at-cap contract is
+     "new notice at [0], total still 24". Cap is not exported from store.js,
+     so it is mirrored here with its source line cited. */
+  const MAX_NOTICES = 24;
+
+  /* real notification channels still work, even with the list already full */
   await js(`window.api.notify('QA pengingat', 'isi'); true`);
   await sleep(180);
   const afterNotify = await js(`window.api.getState()`);
-  check('Bug4 notifikasi asli (notify:push) tetap bekerja',
-    afterNotify.notices[0].title === 'QA pengingat' && afterNotify.notices.length === seedNoticesCount + 1,
-    `top=${afterNotify.notices[0].title} count=${afterNotify.notices.length}`);
+  check('Bug4 notifikasi asli (notify:push) tetap bekerja (seed di atas kap)',
+    afterNotify.notices[0].title === 'QA pengingat' && afterNotify.notices.length === MAX_NOTICES,
+    `top=${afterNotify.notices[0].title} count=${afterNotify.notices.length} cap=${MAX_NOTICES} seed=${seedNoticesCount}`);
 
   /* MAX_CLIPS cap: with 24 clips a new copy replaces the oldest, no notice added */
   const filler = Array.from({ length: 24 }, (_, i) => ({ id: 'f' + i, kind: 'text', text: 'filler-' + i, at: 1700000000000 + i }));
@@ -266,8 +273,26 @@ async function run() {
   const capped = await js(`window.api.getState()`);
   check('Bug4 cap MAX_CLIPS=24: entri baru di atas, jumlah tetap 24, notices tidak bertambah',
     capped.clips.length === 24 && capped.clips[0].text === cappedText
-      && capped.notices.length === seedNoticesCount + 1,
+      && capped.notices.length === MAX_NOTICES,
     `clips=${capped.clips.length} top=${capped.clips[0]?.text} notices=${capped.notices.length}`);
+
+  /* Below-cap control: a real insertion must still grow the list by exactly
+     one. Without this, the two at-cap assertions would pass even if
+     notify:push were dead, so this keeps the test falsifiable. */
+  const belowSeed = Array.from({ length: 2 }, (_, i) => ({
+    id: 'qa-below-' + i, app: 'QA', title: 'seed-' + i, body: 'seed', at: 1700000000000 + i,
+  }));
+  await js(`window.api.patch({ notices: ${JSON.stringify(belowSeed)} }); true`);
+  await sleep(180);
+  const beforeBelow = await js(`window.api.getState()`);
+  await js(`window.api.notify('QABelow', 'isi'); true`);
+  await sleep(180);
+  const afterBelow = await js(`window.api.getState()`);
+  check('Bug4 notifikasi di bawah kap: +1 tepat dan entri baru di atas',
+    beforeBelow.notices.length === belowSeed.length
+      && afterBelow.notices.length === beforeBelow.notices.length + 1
+      && afterBelow.notices[0].title === 'QABelow',
+    `notices=${beforeBelow.notices.length}->${afterBelow.notices.length} top=${afterBelow.notices[0].title}`);
 
   /* ---------------- persistence + settings whitelist on the real app ---------------- */
   await setSetting('visibleTabs', []);
