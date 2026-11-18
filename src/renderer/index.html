@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; img-src 'self' file:; style-src 'self'; script-src 'self'; media-src 'self' file: blob: mediastream:"
+      content="default-src 'none'; img-src 'self' file: data: blob:; style-src 'self'; script-src 'self'; media-src 'self' file: blob: mediastream:"
     />
     <link rel="stylesheet" href="styles.css" />
     <title>Aeolia Island</title>
@@ -52,10 +52,10 @@
     </template>
 
     <h1 class="sr-only">Aeolia Island</h1>
-    <!-- SVG displacement experiment adapted from rdev/liquid-glass-react (MIT).
-         Default off: #island[data-glass-experiment="on"] enables it. A DOM
-         filter cannot refract the OS desktop behind this transparent window;
-         it only displaces pixels this page already owns. -->
+    <!-- r7-liquid is the old default-off page-only experiment adapted from
+         rdev/liquid-glass-react (MIT). A DOM-only filter cannot sample the OS
+         desktop; it only displaces pixels this page owns. r11-glass-refract is
+         the live filter used by the captured-desktop canvas instead. -->
     <svg width="0" height="0" aria-hidden="true" focusable="false">
       <filter id="r7-liquid" x="-10%" y="-10%" width="120%" height="120%" color-interpolation-filters="sRGB">
         <feTurbulence type="fractalNoise" baseFrequency="0.02" numOctaves="1" seed="7" result="noise" />
@@ -67,6 +67,11 @@
         <feGaussianBlur in="blend" stdDeviation="0.4" result="soft" />
         <feComposite in="soft" in2="SourceAlpha" operator="in" />
       </filter>
+      <filter id="r11-glass-refract" x="-10%" y="-10%" width="120%" height="120%" color-interpolation-filters="sRGB">
+        <feTurbulence type="fractalNoise" baseFrequency="0.012 0.02" numOctaves="1" seed="7" result="noise" />
+        <feDisplacementMap in="SourceGraphic" in2="noise" scale="10" xChannelSelector="R" yChannelSelector="G" />
+        <feGaussianBlur stdDeviation="0.4" />
+      </filter>
     </svg>
     <div id="island" data-state="pill" data-island-style="dynamic" data-island-content="clock-robot" data-cat-pos="center" data-cat-rail="right" data-greeting="false" data-mini-mode="clock" data-mic="off">
       <!-- Original web-native Liquid Glass approximation: six compositor
@@ -77,6 +82,8 @@
            glint. renderer.ts sets data-glass-fx="off" when the CSS features
            are missing, leaving the stable dark glass as the fallback. -->
       <div class="glass-fx" aria-hidden="true">
+        <canvas id="glassCanvas" class="glass-canvas"></canvas>
+        <span class="glass-fx__scrim"></span>
         <span class="glass-fx__refract"></span>
         <span class="glass-fx__dispersion"></span>
         <span class="glass-fx__inner"></span>
