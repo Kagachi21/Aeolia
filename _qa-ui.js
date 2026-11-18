@@ -139,19 +139,20 @@ async function rendererProbe() {
   await sleep(1550);
   const settled = await js(win, `(() => { const r = document.getElementById('island');
     return { greeting: r.dataset.greeting, catPos: r.dataset.catPos }; })()`);
-  /* catIdleCenter means "rest in the centre when idle", so the seeded true
-     keeps the cat centred after the greeting. A false value is the contract
-     that sends it to the right rail. Both halves are checked. */
-  check('Regresi greeting selesai + catIdleCenter:true -> kucing tetap di tengah',
-    settled.greeting === 'false' && settled.catPos === 'center', JSON.stringify(settled));
+  /* 9ce1cf6: the cat greets from the centre, then its resting place is ALWAYS
+     the right rail. catIdleCenter is legacy and ignored: it must not pull the
+     cat back to centre. The seeded true here proves exactly that. */
+  check('Regresi greeting selesai + catIdleCenter:true (legacy) -> kucing tetap di kanan',
+    settled.greeting === 'false' && settled.catPos === 'right', JSON.stringify(settled));
   await js(win, `window.probe.emit('settings', { catIdleCenter: false }); true`);
   await sleep(260);
   const settledRight = await js(win, `(() => { const r = document.getElementById('island');
-    return { greeting: r.dataset.greeting, catPos: r.dataset.catPos,
-      idleCenter: r.dataset.catIdleCenter }; })()`);
-  check('Regresi catIdleCenter:false setelah greeting -> kucing pindah ke kanan',
+    return { greeting: r.dataset.greeting, catPos: r.dataset.catPos }; })()`);
+  /* Same result with the flag false proves the legacy knob is ignored. The
+     explicit 'right' also fails if either value ever sends the cat to centre. */
+  check('Regresi catIdleCenter:false setelah greeting -> kucing tetap kanan (flag diabaikan)',
     settledRight.greeting === 'false' && settledRight.catPos === 'right'
-      && settledRight.idleCenter === 'false', JSON.stringify(settledRight));
+      && settledRight.catPos === settled.catPos, JSON.stringify({ settled, settledRight }));
   await js(win, `window.probe.emit('settings', { catIdleCenter: true }); true`);
 
   const structure = await js(win, `(() => {
@@ -1013,21 +1014,29 @@ async function firstRunProbe() {
     during.catOwns === false && during.calls.includes('islandOpen'), JSON.stringify(during));
   w1.destroy();
 
-  /* (b) second launch: already shown -> no greeting, cat settles at once. */
-  /* Same stale contract as the greeting block above: "cat right" is only the
-     expected idle position when catIdleCenter is false. Isolate that knob for
-     the first-run cases, which are about greeting flags, not idle position. */
-  const w2 = launch({ card: { greetingSeen: true }, settings: { catIdleCenter: false } });
+  /* (b) second launch: greetingSeen no longer suppresses anything. Every cold
+     start greets ONCE (greeting=true, cat centre, one greetingSeen patch), then
+     settles on the right rail after the 1.5 s timer. */
+  const w2 = launch({ card: { greetingSeen: true } });
   await boot(w2);
   const b = await snap(w2);
-  check('FirstRun (b) peluncuran kedua tidak menyapa, kucing langsung ke kanan',
-    b.greeting === 'false' && b.catPos === 'right' && b.marks === 0, JSON.stringify(b));
-  /* (e) re-enabling catGreeting later must not replay it. */
+  check('FirstRun (b) peluncuran kedua tetap menyapa sekali (greetingSeen diabaikan)',
+    b.greeting === 'true' && b.catPos === 'center' && b.marks === 1, JSON.stringify(b));
+  await sleep(1550);                    // let the 1.5 s greeting window close
+  const bSettled = await snap(w2);
+  check('FirstRun (b) setelah timer kucing menetap di kanan, sapaan selesai',
+    bSettled.greeting === 'false' && bSettled.catPos === 'right'
+      && bSettled.marks === b.marks, JSON.stringify(bSettled));
+  /* (e) toggling catGreeting off/on in the SAME session must NOT replay: the
+     one-shot latch stays consumed, so no new greetingSeen patch is recorded. */
+  await js(w2, `window.probe.emit('settings', { catGreeting: false }); true`);
+  await sleep(120);
   await js(w2, `window.probe.emit('settings', { catGreeting: true }); true`);
   await sleep(150);
   const e2 = await snap(w2);
   check('FirstRun (e) aktifkan ulang catGreeting tidak memutar ulang sapaan',
-    e2.greeting === 'false' && e2.catPos === 'right', JSON.stringify(e2));
+    e2.greeting === 'false' && e2.catPos === 'right' && e2.marks === b.marks,
+    JSON.stringify({ marksBefore: b.marks, ...e2 }));
   w2.destroy();
 
   /* (d) catGreeting=false: never arms. */

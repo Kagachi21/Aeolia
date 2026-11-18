@@ -21,7 +21,9 @@ const settingsUi = fs.readFileSync(path.join(root, 'src', 'settings', 'settings.
 const wired = new Set(keys.filter((k) =>
   settingsUi.includes("'" + k + "'") || settingsUi.includes('"' + k + '"')));
 const unwired = keys.filter((k) => !wired.has(k));
-const knownInternal = ['mini', 'pill', 'open', 'visualizer', 'musicCardBackground', 'musicCardProgress'];
+/* catIdleCenter is a legacy setting: it stays in DEFAULTS for compatibility but
+   the renderer no longer reads it (the cat always settles on the right rail). */
+const knownInternal = ['mini', 'pill', 'open', 'catIdleCenter', 'visualizer', 'musicCardBackground', 'musicCardProgress'];
 check('Audit dead-toggle: setiap setting punya kontrol UI atau memang internal',
   unwired.length > 0 && unwired.every((k) => knownInternal.includes(k)),
   `keys=${keys.length} unwired=${JSON.stringify(unwired)}`);

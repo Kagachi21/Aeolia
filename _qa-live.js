@@ -28,9 +28,13 @@ const seeded = Object.assign({}, realSettings, {
 });
 fs.writeFileSync(path.join(tmp, 'settings.json'), JSON.stringify(seeded, null, 2), 'utf8');
 const seedState = Object.assign({}, realState, { clips: [] });
-/* The user can clear Notifications at any moment, so the legacy clipboard-style
-   scenario is guaranteed by seeding synthetic entries instead of assuming counts. */
-const SYNTHETIC_LEGACY = 3;
+/* The user can clear Notifications at any moment, so the at-cap scenarios must
+   not depend on how many real notices exist. Keep the user's notices VERBATIM
+   at the top, then pad with synthetic legacy clipboard entries until the seed
+   is >= 26 - comfortably above MAX_NOTICES=24. SYNTHETIC_LEGACY is the minimum
+   padding and grows when the user has fewer than 23 real notices. */
+const MIN_SEED_NOTICES = 26;
+const SYNTHETIC_LEGACY = Math.max(3, MIN_SEED_NOTICES - realState.notices.length);
 seedState.notices = [
   ...realState.notices,
   ...Array.from({ length: SYNTHETIC_LEGACY }, (_, i) => ({
@@ -134,7 +138,8 @@ async function run() {
       && (await js(`typeof window.island`)) === 'object',
     `windows=${BrowserWindow.getAllWindows().length}`);
   check('QA_LIVE seeded real user notices verbatim + synthetic legacy into temp data',
-    seedState.notices.length === realState.notices.length + SYNTHETIC_LEGACY
+    seedNoticesCount >= MIN_SEED_NOTICES
+      && seedState.notices.length === realState.notices.length + SYNTHETIC_LEGACY
       && JSON.stringify(seedState.notices.slice(0, realState.notices.length)) === JSON.stringify(realState.notices)
       && historicClipNotices >= SYNTHETIC_LEGACY,
     `notices=${seedState.notices.length} clipboard=${historicClipNotices}`);
@@ -249,7 +254,7 @@ async function run() {
     `clips=${clipsBefore}->${afterCopy.clips.length} notices=${noticesBefore}->${afterCopy.notices.length} top=${afterCopy.clips[0]?.text}`);
 
   /* store.ts:61-62 sets MAX_NOTICES=24 and pushNotice() (store.ts:162-166)
-     unshifts then slices to 24 on EVERY insert. The seed here is 27 entries,
+     unshifts then slices to 24 on EVERY insert. The seed here is >= 26 entries,
      so seedNoticesCount + 1 is unreachable by design; the at-cap contract is
      "new notice at [0], total still 24". Cap is not exported from store.js,
      so it is mirrored here with its source line cited. */
