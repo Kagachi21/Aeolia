@@ -8,6 +8,9 @@ const PAGES = ['General', 'Appearance', 'Robot', 'Island', 'Panels', 'Keys',
 
 const SURFACES = ['Black', 'Pure black', 'Graphite', 'Glass', 'Acrylic', 'Rosé', 'Lavender', 'Peach', 'Sakura', 'Candy glass', 'Matcha', 'Aurora', 'Dusk', 'Neon', 'Liquid glass', 'Translucent'];
 const GLASS_SURFACES = ['Liquid glass', 'Translucent', 'Candy glass'];
+const LIGHT_SURFACES = ['Liquid glass', 'Translucent', 'Candy glass'];
+/* Keep in sync with DEFAULTS.glassLevel in src/main/settings.ts. */
+const GLASS_LEVEL_DEFAULT = 55;
 const PROGRESS_STYLES = ['Wave', 'Pixels', 'Comet', 'Song shape', 'Simple', 'Hearts'];
 const ACCENTS = ['#e9eef7', '#ffffff', '#e9c46a', '#6ea8ff', '#b48cff', '#ff6b6b', '#ff9c6b', '#6ee7a0', '#46e0dc', '#ff8fc7', '#c3b1ff', '#ffcba4', '#ffd1dc'];
 const ROBOT_EYES = ['#46e0dc', '#6ea8ff', '#b48cff', '#ff8fc7', '#e9c46a', '#ff9c6b', '#ffffff'];
@@ -48,6 +51,13 @@ const BAR_ITEMS = [
 
 let data: Record<string, unknown> = {};
 let currentPage = 'General';
+const injectedTheme = (window as unknown as { __AEOLIA_THEME__?: { surface?: string } }).__AEOLIA_THEME__;
+if (injectedTheme?.surface) applyWindowTheme({ surface: injectedTheme.surface });
+/* Live appearance preview and its companion glass control. They are rendered
+   once per page; onChange updates these nodes instead of rebuilding the page. */
+let appearancePreviewEl: HTMLElement | null = null;
+let glassSectionEl: HTMLElement | null = null;
+let glassRowEl: HTMLElement | null = null;
 
 /* The tab picker and the tab order editor edit the same list. A tiny in-page
    bus keeps both views in sync without rebuilding the page (which would steal
@@ -154,7 +164,7 @@ function dropdown(key: string, options: string[]): HTMLElement {
   return select;
 }
 
-function slider(key: string, min: number, max: number, step: number, suffix: string): HTMLElement {
+function slider(key: string, min: number, max: number, step: number, suffix: string, fallback: number = min): HTMLElement {
   const wrap = document.createElement('div');
   wrap.className = 'range';
   const input = document.createElement('input');
@@ -162,7 +172,7 @@ function slider(key: string, min: number, max: number, step: number, suffix: str
   input.min = String(min);
   input.max = String(max);
   input.step = String(step);
-  input.value = String(data[key] ?? min);
+  input.value = String(data[key] ?? fallback);
   const val = document.createElement('span');
   val.className = 'val';
   val.textContent = `${input.value}${suffix}`;
@@ -551,8 +561,7 @@ function robotPreview(): HTMLElement {
   const box = document.createElement('div');
   box.className = 'robot-preview';
   const index = ROBOT_EYES.indexOf(String(data.robotEyeColor ?? ''));
-  box.dataset.eye = index < 0 ? 'accent' : String(index);
-  box.dataset.accent = String(data.accent ?? '#e9eef7');
+  box.dataset.eye = String(index < 0 ? 0 : index);
   const accessory = String(data.robotAccessory ?? 'none');
   const glasses = accessory === 'glasses'
     ? '<circle class="pc-lens" cx="14.5" cy="19.4" r="4.6"/><circle class="pc-lens" cx="25.5" cy="19.4" r="4.6"/><path class="pc-line" d="M19.1 19.4H20.9M10 18.8L6.4 16.8M30 18.8L33.6 16.8"/>'
@@ -583,14 +592,13 @@ function robotEyeSwatches(): HTMLElement {
   wrap.className = 'swatches robot-swatches';
   wrap.setAttribute('role', 'group');
   wrap.setAttribute('aria-label', 'Eye colour');
-  const values = ['', ...ROBOT_EYES];
-  values.forEach((hex, i) => {
+  ROBOT_EYES.forEach((hex, i) => {
     const b = document.createElement('button');
     b.type = 'button';
-    b.className = hex ? 'sw' : 'sw sw-accent';
+    b.className = 'sw';
     b.dataset.ri = String(i);
-    b.title = hex || 'Follow accent';
-    b.setAttribute('aria-label', hex || 'Follow accent');
+    b.title = hex;
+    b.setAttribute('aria-label', hex);
     const on = String(data.robotEyeColor ?? '') === hex;
     b.setAttribute('aria-pressed', String(on));
     b.classList.toggle('on', on);
@@ -658,15 +666,40 @@ function sliderSeconds(key: string, minSec: number, maxSec: number, stepSec: num
   return wrap;
 }
 
+function applyWindowTheme(s: Record<string, unknown>): void {
+  const surface = String(s.surface ?? 'Black');
+  document.documentElement.dataset.surface = surface;
+  document.documentElement.dataset.tone = LIGHT_SURFACES.includes(surface) ? 'light' : 'dark';
+}
+
 function appearancePreview(): HTMLElement {
   const box = document.createElement('div');
   box.className = 'appearance-preview';
   box.dataset.surface = String(data.surface ?? 'Black');
-  box.dataset.accent = String(data.accent ?? '#e9eef7');
   box.innerHTML =
     '<span class="ap-caption">Live preview</span>' +
     '<span class="ap-pill"><span class="ap-cat"></span><span class="ap-clock">--:--</span></span>';
+  appearancePreviewEl = box;
   return box;
+}
+
+/** Repaint the preview and its glass dial from the current state without
+ *  rebuilding the page, so an in-progress control never loses focus. */
+function syncAppearancePreview(): void {
+  if (!appearancePreviewEl || !appearancePreviewEl.isConnected) return;
+  appearancePreviewEl.dataset.surface = String(data.surface ?? 'Black');
+  const glassVisible = GLASS_SURFACES.includes(String(data.surface));
+  if (glassSectionEl) glassSectionEl.hidden = !glassVisible;
+  if (glassRowEl) glassRowEl.hidden = !glassVisible;
+  const input = glassRowEl?.querySelector<HTMLInputElement>('input[type="range"]');
+  if (input) {
+    const next = String(data.glassLevel ?? GLASS_LEVEL_DEFAULT);
+    if (input.value !== next) {
+      input.value = next;
+      const val = glassRowEl?.querySelector<HTMLElement>('.val');
+      if (val) val.textContent = `${next}%`;
+    }
+  }
 }
 
 function surfaceCards(): HTMLElement {
@@ -689,6 +722,7 @@ function surfaceCards(): HTMLElement {
     label.textContent = name;
     b.append(swatch, label);    b.addEventListener('click', async () => {
       await set('surface', name);
+      syncAppearancePreview();
       Array.from(wrap.children).forEach((c) => {
         const sel = c === b;
         c.classList.toggle('on', sel);
@@ -703,6 +737,9 @@ function surfaceCards(): HTMLElement {
 function renderPage(): void {
   title.textContent = currentPage;
   page.replaceChildren();
+  appearancePreviewEl = null;
+  glassSectionEl = null;
+  glassRowEl = null;
   const add = (el: HTMLElement) => page.appendChild(el);
 
   if (currentPage === 'General') {
@@ -730,11 +767,16 @@ function renderPage(): void {
     add(surfaceCards());
 
     // Glass thickness only applies to the two glass themes; showing it for
-    // every surface would be a dead control.
-    if (GLASS_SURFACES.includes(String(data.surface))) {
-      add(section('Kekentalan kaca'));
-      add(row('Kekentalan', 'Makin tinggi makin solid. Mengikuti material Liquid Glass iOS.', slider('glassLevel', 20, 90, 5, '%')));
-    }
+    // every surface would be a dead control. Keep both nodes mounted and let
+    // syncAppearancePreview() reveal them when the selection changes.
+    const glassSection = section('Kekentalan kaca');
+    const glassRow = row('Kekentalan', 'Makin tinggi makin solid. Mengikuti material Liquid Glass iOS.', slider('glassLevel', 20, 90, 5, '%', GLASS_LEVEL_DEFAULT));
+    glassSectionEl = glassSection;
+    glassRowEl = glassRow;
+    glassSection.hidden = !GLASS_SURFACES.includes(String(data.surface));
+    glassRow.hidden = glassSection.hidden;
+    add(glassSection);
+    add(glassRow);
 
     add(section('Island content'));
     add(choiceCards([
@@ -844,7 +886,7 @@ function renderPage(): void {
     add(section('Preview'));
     add(robotPreview());
     add(section('Eye colour'));
-    add(row('Eye colour', 'Warna mata kucing. "Follow accent" memakai warna aksen island.', robotEyeSwatches()));
+    add(row('Eye colour', 'Warna mata kucing. Tanpa pilihan khusus, mata memakai warna identik kucing, bukan aksen island.', robotEyeSwatches()));
     add(note('Mata merah dipakai untuk peringatan baterai, hijau saat penuh. Warna di atas untuk tampilan biasanya.'));
     add(section('Accessories'));
     add(choiceCards(ACCESSORIES, 'robotAccessory'));
@@ -858,9 +900,15 @@ function renderPage(): void {
     add(note('Aksesori kamera dan mikrofon memerlukan deteksi perangkat dan belum tersedia.'));
   } else if (currentPage === 'Island') {
     add(section('Placement'));
-    add(row('Position', 'Posisi island di layar.', segment('islandPosition', [
+    add(row('Position', 'Posisi island di layar. Seret badan island untuk memindahkannya; posisi geser tersimpan otomatis.', segment('islandPosition', [
       { label: 'Left', value: 'left' }, { label: 'Center', value: 'center' }, { label: 'Right', value: 'right' },
     ])));
+    const resetOffset = document.createElement('button');
+    resetOffset.type = 'button';
+    resetOffset.className = 'pickbtn';
+    resetOffset.textContent = 'Kembalikan posisi geser';
+    resetOffset.addEventListener('click', () => void set('islandOffset', { x: 0, y: 0 }));
+    add(row('Posisi geser', 'Hapus offset dari seret terakhir dan kembali ke posisi di atas.', resetOffset));
     add(row('Edge margin', 'Jarak dari tepi atas dan samping.', slider('edgeMargin', 0, 40, 1, ' px')));
     add(note('Saat island mengambang (Jarak dari tepi lebih dari 0), area antara tepi atas layar dan island tetap aktif. Arahkan kursor ke tepi atas untuk membuka kartu.'));
     add(row('Monitor', 'Layar yang dipakai.', segment('monitor', [
@@ -882,6 +930,11 @@ function renderPage(): void {
       { value: 'clock-date', label: 'Jam + tanggal', desc: 'Jam dan tanggal ringkas.' },
       { value: 'cat', label: 'Kucing', desc: 'Hanya kucing di notch.' },
     ], 'miniMode'));
+    add(section('Saat musik diputar'));
+    add(note('Aplikasi layar penuh tetap memprioritaskan notch agar video tidak tertutup.'));
+    add(row('Perilaku media', 'Apa yang dilakukan island saat lagu berjalan.', segment('mediaMiniBehavior', [
+      { label: 'Biarkan', value: 'keep' }, { label: 'Kecil', value: 'mini' }, { label: 'Sembunyi', value: 'hide' },
+    ])));
     add(section('Pemicu notch'));
     add(note('Kondisi yang membuat island menyusut. "Aplikasi sibuk" mencakup browser dengan banyak tab dan Word.'));
     add(choiceCards([
@@ -891,8 +944,7 @@ function renderPage(): void {
     ], 'miniTrigger'));
 
     add(section('Kucing'));
-    add(row('Sapaan saat dibuka', 'Kucing senyum di tengah sebentar, lalu pindah ke kanan.', toggle('catGreeting')));
-    add(row('Kembali ke tengah saat idle', 'Saat komputer tidak dipakai, kucing pindah ke tengah.', toggle('catIdleCenter')));
+    add(row('Sapaan saat dibuka', 'Setiap Aeolia dibuka, kucing senyum di tengah sebentar lalu pindah ke kanan.', toggle('catGreeting')));
   } else if (currentPage === 'Panels') {
     add(section('Visible tabs'));
     add(note('Pilih tab yang tampil di bilah kartu. Mengosongkan semua menyembunyikan seluruh tab panel; tombol grid dan Settings tetap tersedia di kartu.'));
@@ -930,6 +982,9 @@ function renderPage(): void {
     add(section('Mode rapat'));
     add(row('Deteksi otomatis', 'Kenali rapat dari judul jendela Zoom, Teams, Meet, dan sejenisnya.', toggle('meetingAuto')));
     add(row('Tombol mikrofon', 'Tampilkan tombol bisu satu klik di island saat rapat.', toggle('meetingMicButton')));
+    add(row('Kontrol kamera', 'Shortcut aplikasi rapat, izin kamera Windows (HKCU, tanpa admin), atau keduanya. Mode izin membaca status dari Windows setelah perubahan.', segment('cameraMode', [
+      { label: 'Shortcut', value: 'shortcut' }, { label: 'Privasi Windows', value: 'privacy' }, { label: 'Keduanya', value: 'both' },
+    ])));
     add(row('Abaikan aplikasi', 'Pisahkan dengan koma; nama proses atau judul jendela.', csvField('meetingIgnoreApps', 'Discord.exe, Game launch')));
     add(note('Saat rapat: notifikasi ditahan, kode OTP/verifikasi tetap lewat, dan musik yang sedang diputar dijeda. Windows tidak membuka status mikrofon, jadi deteksi memakai judul jendela.'));
     add(section('Notifikasi'));
@@ -1013,6 +1068,7 @@ document.getElementById('close')?.addEventListener('click', () => window.setting
 
 window.settingsApi.get().then((s) => {
   data = s;
+  applyWindowTheme(data);
   renderNav();
   renderPage();
 });
@@ -1020,6 +1076,8 @@ window.settingsApi.get().then((s) => {
 window.settingsApi.onChange((s) => {
   // Every control updates its own DOM already. Rebuilding the page here would
   // steal focus mid-typing and recreate the status pollers on every keystroke,
-  // so keep the state fresh and leave the rendered controls alone.
+  // so keep the state fresh and update the live preview in place instead.
   data = s;
+  applyWindowTheme(data);
+  syncAppearancePreview();
 });

@@ -1,5 +1,5 @@
 import type { BrowserWindow } from 'electron';
-import { boundsFor, BANNER_EXTRA, MIC_PILL_EXTRA, type IslandState, type Rect } from './bounds';
+import { activeDisplay, boundsFor, BANNER_EXTRA, MIC_PILL_EXTRA, type IslandState, type Rect } from './bounds';
 import type { Settings } from './settings';
 
 export type BaseState = 'mini' | 'pill';
@@ -14,12 +14,16 @@ export class Island {
   private mediaPillWidth: number | null = null;
   private micExtra: number | null = null;
   private bannerExtra: number | null = null;
+  private dragging = false;
+  private offset: { x: number; y: number } = { x: 0, y: 0 };
 
   constructor(
     private readonly win: BrowserWindow,
     private readonly settings: Settings,
     private readonly onChange: (state: IslandState) => void = () => {}
-  ) {}
+  ) {
+    this.offset = { ...(settings.islandOffset ?? { x: 0, y: 0 }) };
+  }
 
   get current(): IslandState {
     return this.state;
@@ -59,8 +63,42 @@ export class Island {
     // animation its remaining frames would drag the window back to stale bounds.
     this.stop();
     this.openHeight = null;
+    this.offset = { ...(this.settings.islandOffset ?? { x: 0, y: 0 }) };
     this.win.setBounds(this.bounds(this.state));
   }
+
+  /* ---- pointer dragging (works on every surface, including Liquid glass) ----
+     Electron's -webkit-app-region would only work with a movable window and is
+     disabled on this frameless always-on-top pill, so the renderer sends drag
+     deltas over IPC and the main process moves the BrowserWindow itself. */
+
+  /** Enter/exit drag mode. Entering stops any running shape animation, and
+     re-reads the persisted offset so a Settings reset cannot be overwritten. */
+  setDragging(on: boolean): void {
+    this.dragging = Boolean(on);
+    if (this.dragging) {
+      this.stop();
+      this.offset = { ...(this.settings.islandOffset ?? { x: 0, y: 0 }) };
+    }
+  }
+
+  get isDragging(): boolean { return this.dragging; }
+
+  /** Move by a renderer-reported delta, clamped to the active display. */
+  dragBy(dx: number, dy: number): void {
+    if (!this.dragging) return;
+    const b = this.win.getBounds();
+    const d = activeDisplay(this.settings).bounds;
+    const x = Math.round(Math.min(Math.max(b.x + dx, d.x), Math.max(d.x, d.x + d.width - b.width)));
+    const y = Math.round(Math.min(Math.max(b.y + dy, d.y), Math.max(d.y, d.y + d.height - b.height)));
+    if (x === b.x && y === b.y) return;
+    this.win.setBounds({ ...b, x, y });
+    this.offset.x += x - b.x;
+    this.offset.y += y - b.y;
+  }
+
+  /** Offset to persist when the drag ends. */
+  getOffset(): { x: number; y: number } { return { ...this.offset }; }
 
   /** Fit the open card to the panel the renderer just measured. */
   setOpenHeight(height: number): void {

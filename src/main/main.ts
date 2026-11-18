@@ -6,6 +6,7 @@ import { BROWSERS, browserShouldShrink, browserTabCount, focusProcessWindow, get
 import { activeDisplay, boundsFor, effectiveScalePct, micStripRect,
   pointInRect, type IslandState } from './bounds';
 import { getActiveCaptureProcesses } from './captureSessions';
+import { setDesktopGlass } from './desktopGlass';
 import { Island } from './island';
 import { dropThickFrame } from './thinFrame';
 import { loadSettings, setValue } from './settings';
@@ -15,8 +16,9 @@ import { mediaNext, mediaPlayPause, mediaPrev } from './keys';
 import { sendShortcut } from './keys';
 import { fetchLyrics } from './lyrics';
 import { fetchTrackColors, toDeepPalette } from './musicColors';
-import { getMicMuted, toggleMicMute } from './micMute';
-import { cameraAppFor, camDecision, camResult } from './camToggle';
+import { getMicMuted, lastMicError, toggleMicMute } from './micMute';
+import { cameraAppFor, cameraFocusTarget, camDecision, camResult, focusedAppMatches, type CamToggleResult } from './camToggle';
+import { toggleWebcamConsent } from './cameraPrivacy';
 import * as noticeLauncher from './noticeLaunch';
 import { brightnessRange, pasteShortcut, setBrightness, toggleMute, volumeStep } from './systemControl';
 import { cleanRam, cpuPercent, memoryInfo } from './ramClean';
@@ -61,10 +63,17 @@ let activeIsWord = false;
    and expand the card before the user's click can reach the button. */
 let micHot = false;
 let mediaPlaying = false;
+/* True while the "hide" media behaviour keeps a shrunken island transparent
+   until hover. Published to the renderer through island:update. */
+let mediaHidden = false;
 /* The renderer owns the 4200 ms notice banner; while it is up the pill must
    keep its width even if the foreground window turns fullscreen, or the
    banner gets clipped into the 14 px notch. */
 let bannerActive = false;
+/* True between island:drag-start and island:drag-end. Hover-open, the cursor
+   zone poll and pointer IPC are all suspended so a drag cannot expand the card
+   halfway through the gesture. */
+let dragging = false;
 let mediaTitle = '';
 let mediaTimer: NodeJS.Timeout | null = null;
 let clipTimer: NodeJS.Timeout | null = null;
@@ -152,11 +161,14 @@ function createWindow(): void {
  */
 const forcedState = process.env.ISLAND_FORCE_STATE;
 
-/*
- * Windows will not shrink this window below 39 px tall, so the mini notch is
- * drawn in the top 14 px and everything under it is made click-through. That
- * keeps the browser tab strip usable even though the window is taller.
- */
+function settingsBackgroundColor(): string {
+  const surface = String(loadSettings().surface ?? 'Black');
+  if (surface === 'Liquid glass') return '#eef3fb';
+  if (surface === 'Translucent') return '#d5dae1';
+  if (surface === 'Candy glass') return '#f8e6ee';
+  return '#2b1e1a';
+}
+
 function openSettingsWindow(): void {
   if (settingsWin && !settingsWin.isDestroyed()) {
     settingsWin.focus();
@@ -168,10 +180,11 @@ function openSettingsWindow(): void {
     frame: false,
     resizable: false,
     maximizable: false,
-    backgroundColor: '#2b1e1a',
+    backgroundColor: settingsBackgroundColor(),
     show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/settings-preload.js'),
+      additionalArguments: [`--aeolia-surface=${String(loadSettings().surface ?? 'Black')}`],
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
@@ -230,6 +243,7 @@ function pushStatus(): void {
     word: activeIsWord,
     media: mediaPlaying,
     mediaTitle,
+    mediaHidden,
     accent: s.accent,
     surface: s.surface,
     glassLevel: s.glassLevel,
@@ -322,7 +336,7 @@ function pollRobot(): void {
 function syncRobotTimer(): void {
   const s = loadSettings();
   const needed =
-    s.robotIdleOnly || s.robotBatteryExpressions || s.robotEyeMovement === 'cursor' || s.catIdleCenter;
+    s.robotIdleOnly || s.robotBatteryExpressions || s.robotEyeMovement === 'cursor';
   if (needed) {
     if (!robotTimer) robotTimer = setInterval(pollRobot, ROBOT_TICK_MS);
     // A settings change can alter how the renderer reads the same sample
@@ -382,7 +396,12 @@ function pollActiveWindow(): void {
   });
 
   const browser = BROWSERS.has(info.process);
-  const tabs = browser ? browserTabCount(info.hwnd) : 0;
+  // A tab count costs a synchronous PowerShell child process. Only ask for it
+  // when the notch decision can actually use it: a fullscreen window already
+  // shrinks on its own, and miniMode 'off' never shrinks at all. The 8-tab
+  // threshold and the immediate fullscreen path are unchanged.
+  const needTabs = browser && settings.miniMode !== 'off' && !info.fullscreen;
+  const tabs = needTabs ? browserTabCount(info.hwnd) : 0;
   busyForDelay = info.fullscreen || (browser
     ? browserShouldShrink(info.process, info.title, false, tabs)
     : isBusyProcess(info.process));
@@ -397,11 +416,22 @@ function pollActiveWindow(): void {
   else if (settings.miniTrigger === 'busy') shrinks = info.fullscreen || busyForDelay;
   else if (settings.miniTrigger === 'maximized') shrinks = info.fullscreen || info.maximized;
   else shrinks = info.fullscreen || (settings.slimStrip && info.maximized);
-  // A playing track keeps the full pill awake (the notch hides the controls),
-  // but a fullscreen app still wins so the island never covers a video.
-  const hide = !miniOff && shrinks && !bannerActive && (!mediaPlaying || info.fullscreen);
+  // A playing track keeps the full pill awake by default (the notch hides the
+  // controls), but a fullscreen app still wins so the island never covers a
+  // video. mediaMiniBehavior may override the media rule: 'mini' shrinks to
+  // the notch, 'hide' shrinks AND makes the island transparent until hover.
+  const mediaBehavior = settings.mediaMiniBehavior ?? 'keep';
+  const mediaOverrides = mediaPlaying && !info.fullscreen
+    && (mediaBehavior === 'mini' || mediaBehavior === 'hide');
+  const hide = !miniOff && !bannerActive
+    && (mediaOverrides || (shrinks && (!mediaPlaying || info.fullscreen)));
+  const nextMediaHidden = Boolean(hide && mediaPlaying && mediaBehavior === 'hide' && !info.fullscreen);
   const nextBase: 'mini' | 'pill' = hide ? 'mini' : 'pill';
   island.setBase(nextBase);
+  if (nextMediaHidden !== mediaHidden) {
+    mediaHidden = nextMediaHidden;
+    pushStatus();
+  }
 
   const word = info.process === 'winword';
   if (word !== activeIsWord) {
@@ -455,6 +485,9 @@ function armHover(): void {
  */
 function pollHoverZone(): void {
   if (forcedState) return;               // verification seam must stay pinned
+  // While dragging, never arm hover-open: the pointer is moving the window,
+  // not asking to expand it into the card.
+  if (dragging) { cancelHover(); return; }
   if (!win || win.isDestroyed() || !island) return;
   // A hot capsule owns its own hit area: never peek, open or close the card
   // while the user is aiming at Mic/Cam.
@@ -510,6 +543,7 @@ function pollHoverZone(): void {
 }
 
 function handleIslandPointer(kind: string): void {
+  if (dragging) return;                  // a drag is not a hover request
   // Click-through is owned by syncClickThrough(state) via Island.onChange.
   // Pointer IPC only remains for the reveal effect of hiddenUntilHover and for
   // the capsule hover guard below.
@@ -568,8 +602,37 @@ app.whenReady().then(() => {
     bannerActive = Boolean(active);
     island?.setBanner(bannerActive);
   });
+  ipcMain.handle('glass:set-active', (_e, active: boolean) => {
+    setDesktopGlass(Boolean(active), win || null);
+    return Boolean(active);
+  });
   // Clicking the small notch expands the island into the open card.
   ipcMain.handle('island:open', () => island?.open());
+
+  /* Pointer dragging. The renderer sends a delta per pointermove and main
+     moves the window; the final offset is persisted to settings so it survives
+     a restart and a settings reload. */
+  ipcMain.on('island:drag-start', () => {
+    dragging = true;
+    cancelHover();
+    cancelLeave();
+    island?.setDragging(true);
+  });
+  ipcMain.on('island:drag-move', (_e, dx: number, dy: number) => {
+    if (dragging) island?.dragBy(Number(dx) || 0, Number(dy) || 0);
+  });
+  ipcMain.on('island:drag-end', () => {
+    if (!dragging) return;
+    dragging = false;
+    island?.setDragging(false);
+    const offset = island?.getOffset();
+    if (offset) {
+      setValue('islandOffset', offset);
+      island?.reposition();
+    }
+    zoneInside = false;
+    pollHoverZone();
+  });
 
   ipcMain.on('settings:window', () => openSettingsWindow());
   ipcMain.handle('settings:get', () => loadSettings());
@@ -602,8 +665,22 @@ app.whenReady().then(() => {
   // Real microphone mute (Core Audio capture endpoint) + per-app camera
   // shortcut for the meeting pill. Null/ok:false are honest failure states.
   ipcMain.handle('mic:mute-state', () => getMicMuted());
-  ipcMain.handle('mic:mute-toggle', () => toggleMicMute());
-  ipcMain.handle('cam:toggle', () => {
+  ipcMain.handle('mic:mute-toggle', async () => {
+    const next = await toggleMicMute();
+    // null alone told the renderer nothing. The helper now captures stderr, so
+    // publish the actual reason as a separate event without changing the
+    // boolean|null contract the pill and existing probes rely on.
+    if (next === null) win?.webContents.send('mic:error', lastMicError() || 'State mikrofon tidak bisa dibaca');
+    return next;
+  });
+
+  /* One Cam capsule, two independent mechanisms:
+     - shortcut: the meeting app's own hotkey, only after focus verification,
+       honest "unverified" because Aeolia cannot read that app's camera state;
+     - privacy: the HKCU webcam consent store, verified by reading the values
+       back after writing them. 'both' runs both and reports the verified
+       privacy state while still naming the shortcut outcome. */
+  const shortcutToggle = async (): Promise<CamToggleResult> => {
     const active = getActiveWindow({ x: 0, y: 0, width: 0, height: 0 });
     const fallback = getExtras().meetingApp || '';
     const activeApp = cameraAppFor(active.process || fallback, active.title || fallback);
@@ -615,12 +692,42 @@ app.whenReady().then(() => {
     // the honest focus label. A plain browser window is not: pass the real
     // foreground process so a background Zoom reports need-focus.
     const focusedLabel = activeApp !== active.process ? activeApp : active.process;
-    const decision = camDecision(app, focusedLabel);
-    const sent = decision.send ? sendShortcut(decision.send) : false;
-    const bringTarget = BROWSERS.has(active.process) ? active.process : app;
-    const brought = !decision.send && decision.focus && bringTarget
+    const decision = camDecision(app, focusedLabel, true);
+    const bringTarget = cameraFocusTarget(decision.app || app, active.process);
+    const brought = decision.focus && bringTarget
       ? focusProcessWindow(bringTarget) : false;
-    return camResult(decision, sent, decision.observedFocus || brought);
+    if (decision.sendAfterFocus && brought) {
+      await new Promise((resolve) => setTimeout(resolve, 120));
+    }
+    const nowActive = getActiveWindow({ x: 0, y: 0, width: 0, height: 0 });
+    const targetFocused = focusedAppMatches(decision.app || app, nowActive.process);
+    // Never fire a camera shortcut into the wrong window: send only when the
+    // resolved meeting app was already focused or focus actually moved to it.
+    const canSend = Boolean(decision.send && (targetFocused || brought));
+    const sent = canSend ? Boolean(sendShortcut(decision.send as string)) : false;
+    return camResult(decision, sent, targetFocused || brought);
+  };
+
+  ipcMain.handle('cam:toggle', async () => {
+    const mode = loadSettings().cameraMode ?? 'both';
+    if (mode === 'privacy') {
+      const p = await toggleWebcamConsent();
+      return { ...p, sent: false, focused: false, shortcut: '', mode } as CamToggleResult;
+    }
+    if (mode === 'both') {
+      const p = await toggleWebcamConsent();
+      const s = await shortcutToggle();
+      return {
+        ...s,
+        ok: p.ok,
+        verified: p.verified,
+        enabled: p.enabled,
+        mode,
+        code: p.verified ? 'privacy-verified' : p.code,
+        hint: `${p.hint} · ${s.hint}`,
+      } as CamToggleResult;
+    }
+    return { ...(await shortcutToggle()), mode };
   });
   // Worship reminders pause the current track; the resume offer plays it again.
   // Both are guarded so a stale click can never invert playback.

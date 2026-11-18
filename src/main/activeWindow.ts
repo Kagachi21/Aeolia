@@ -330,13 +330,20 @@ export function browserShouldShrink(
 let tabCountCache: { hwnd: string; count: number; at: number } | null = null;
 
 /* UI Automation is the only reliable way to count Chrome/Edge tabs: the
-   window title only names the active tab. Results are cached briefly because
-   the island polls the foreground window several times a second. */
+   window title only names the active tab. The island looks at the foreground
+   window twice a second, so a short cache spawned PowerShell 33-120 times a
+   minute. A 12 s cache keeps the 8-tab decision correct for a foreground
+   window (opening many tabs is a human-speed action) while cutting the churn
+   by ~6x. Failures are cached too: without that, a machine where the helper
+   cannot compile retried on every single poll. Tradeoff: a tab burst settles
+   into the notch up to 12 s late; fullscreen detection is independent of the
+   count and stays immediate. */
+const TAB_COUNT_CACHE_MS = 12000;
 export function browserTabCount(hwnd: string): number {
   const h = String(hwnd || '');
   if (!h) return 0;
   const now = Date.now();
-  if (tabCountCache && tabCountCache.hwnd === h && now - tabCountCache.at < 1800) {
+  if (tabCountCache && tabCountCache.hwnd === h && now - tabCountCache.at < TAB_COUNT_CACHE_MS) {
     return tabCountCache.count;
   }
   try {
@@ -348,6 +355,8 @@ export function browserTabCount(hwnd: string): number {
     tabCountCache = { hwnd: h, count, at: now };
     return count;
   } catch {
-    return tabCountCache && tabCountCache.hwnd === h ? tabCountCache.count : 0;
+    const fallback = tabCountCache && tabCountCache.hwnd === h ? tabCountCache.count : 0;
+    tabCountCache = { hwnd: h, count: fallback, at: now };
+    return fallback;
   }
 }

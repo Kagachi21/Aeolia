@@ -18,10 +18,18 @@ contextBridge.exposeInMainWorld('island', {
   pointer(kind: PointerKind, y?: number): void {
     ipcRenderer.send('island:pointer', kind, y);
   },
+  dragStart(): void { ipcRenderer.send('island:drag-start'); },
+  dragMove(dx: number, dy: number): void { ipcRenderer.send('island:drag-move', dx, dy); },
+  dragEnd(): void { ipcRenderer.send('island:drag-end'); },
   onHover(cb: (inside: boolean) => void): () => void {
     const handler = (_event: unknown, inside: boolean) => cb(inside);
     ipcRenderer.on('island:hover', handler);
     return () => ipcRenderer.removeListener('island:hover', handler);
+  },
+  onMicError(cb: (hint: string) => void): () => void {
+    const handler = (_event: unknown, hint: string) => cb(hint);
+    ipcRenderer.on('mic:error', handler);
+    return () => ipcRenderer.removeListener('mic:error', handler);
   },
   onRobotState(cb: (state: RobotState) => void): () => void {
     const handler = (_event: unknown, state: RobotState) => cb(state);
@@ -82,6 +90,14 @@ contextBridge.exposeInMainWorld('api', {
   pauseMedia: () => ipcRenderer.send('media:pause'),
   playMedia: () => ipcRenderer.send('media:play'),
   bannerShow: (active: boolean) => ipcRenderer.send('banner:show', active),
+  setGlassCapture: (active: boolean) => ipcRenderer.invoke('glass:set-active', active),
+  /* A captured frame is compact JPEG bytes; probes may still inject a data
+     URL string, so both representations are accepted. */
+  onGlassFrame: (cb: (frame: { data: string | Uint8Array; width: number; height: number; origin?: string }) => void): (() => void) => {
+    const handler = (_event: unknown, frame: { data: string | Uint8Array; width: number; height: number; origin?: string }) => cb(frame);
+    ipcRenderer.on('glass:frame', handler);
+    return () => ipcRenderer.removeListener('glass:frame', handler);
+  },
   islandOpen: () => ipcRenderer.invoke('island:open'),
   micMuteState: () => ipcRenderer.invoke('mic:mute-state'),
   micMuteToggle: () => ipcRenderer.invoke('mic:mute-toggle'),

@@ -182,23 +182,50 @@ function runPs(mode: 'get' | 'on' | 'off'): Promise<string> {
         ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath(), '-Mode', mode, '-Dll', dllPath()],
         { windowsHide: true });
       let out = '';
+      let err = '';
       p.stdout.on('data', (d) => { out += String(d); });
-      p.on('error', () => done('error'));
-      p.on('close', (code) => done(code === 0 ? out : 'error'));
-      setTimeout(() => { try { p.kill(); } catch { /* already gone */ } done('error'); }, 8000);
-    } catch {
-      done('error');
+      p.stderr.on('data', (d) => { err += String(d); });
+      /* A compile/COM failure used to collapse to the bare string "error" and
+         the pill silently showed "unknown". Keep the first stderr line so the
+         caller can show the user a real reason instead of a dead button. */
+      const detail = (): string => err.split(/\r?\n/).map((s) => s.trim()).find(Boolean)?.slice(0, 160) || '';
+      p.on('error', (e) => done(`error|spawn: ${e instanceof Error ? e.message : String(e)}`));
+      p.on('close', (code) => done(code === 0 ? out : `error|exit ${code}${detail() ? `: ${detail()}` : ''}`));
+      setTimeout(() => { try { p.kill(); } catch { /* already gone */ } done('error|timeout'); }, 8000);
+    } catch (e) {
+      done(`error|${e instanceof Error ? e.message : String(e)}`);
     }
   });
 }
 
+let lastError: string | null = null;
+
+/** The last mic failure reason, or null after a successful read. */
+export function lastMicError(): string | null { return lastError; }
+
+function hintFromReply(reply: string): string {
+  const text = String(reply || '');
+  if (/muted=error/.test(text)) return 'Core Audio menolak akses ke mikrofon (COM error)';
+  const m = /^error\|(.*)$/m.exec(text);
+  if (m && m[1]) return `PowerShell gagal: ${m[1]}`;
+  return 'State mikrofon tidak bisa dibaca';
+}
+
+/** Parse and remember why a read failed. null is still the honest value; the
+    hint is delivered separately so existing boolean|null callers stay valid. */
+function readState(reply: string): boolean | null {
+  const value = parseMuteReply(reply);
+  lastError = value === null ? hintFromReply(reply) : null;
+  return value;
+}
+
 export async function getMicMuted(): Promise<boolean | null> {
-  return parseMuteReply(await (executor ?? runPs)('get'));
+  return readState(await (executor ?? runPs)('get'));
 }
 
 /** Read state, flip it, return the NEW state; null when Core Audio refused. */
 export async function toggleMicMute(): Promise<boolean | null> {
   const cur = await getMicMuted();
   if (cur === null) return null;
-  return parseMuteReply(await (executor ?? runPs)(cur ? 'off' : 'on'));
+  return readState(await (executor ?? runPs)(cur ? 'off' : 'on'));
 }

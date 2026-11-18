@@ -9,6 +9,7 @@ declare global {
     word: boolean;
     media: boolean;
     mediaTitle: string;
+    mediaHidden?: boolean;
     accent: string;
     surface: string;
     cardWidth: number;
@@ -68,6 +69,7 @@ declare global {
     meetingAuto: boolean;
     meetingMicButton: boolean;
     meetingIgnoreApps: string[];
+    cameraMode: 'shortcut' | 'privacy' | 'both';
     islandScale: number | 'auto';
     pillLyrics: boolean;
     visualizer: 'pixels' | 'bars';
@@ -124,18 +126,22 @@ declare global {
     code?: NoticeCode | 'empty-input';
     error?: string;
   };
-  type CamCode = 'unverified-shortcut' | 'need-focus' | 'no-shortcut' | 'unknown-app' | 'send-failed';
+  type CamCode = 'unverified-shortcut' | 'need-focus' | 'no-shortcut' | 'unknown-app' | 'send-failed'
+    | 'privacy-verified' | 'privacy-unverified' | 'privacy-read-failed' | 'privacy-write-failed';
   /* focused = the meeting app was observed as foreground when the decision was
      made, OR focusProcessWindow succeeded for a need-focus/no-shortcut click.
-     It is NOT proof of camera state. R7 never reports verified:true. */
+     It is NOT proof of camera state. Only the privacy path, which reads the
+     HKCU consent values back, may set verified:true. */
   type CamToggleResult = {
-    ok: false;
-    verified: false;
+    ok: boolean;
+    verified: boolean;
     sent: boolean;
     focused: boolean;
     shortcut: string;
     code: CamCode;
     hint: string;
+    enabled?: boolean | null;
+    mode?: 'shortcut' | 'privacy' | 'both';
   };
   interface CardTask { id: string; name: string; done: boolean }
   interface CardState {
@@ -178,7 +184,11 @@ declare global {
     island: {
       onStatus(cb: (status: IslandStatus) => void): () => void;
       pointer(kind: PointerKind, y?: number): void;
+      dragStart(): void;
+      dragMove(dx: number, dy: number): void;
+      dragEnd(): void;
       onHover(cb: (inside: boolean) => void): () => void;
+      onMicError(cb: (hint: string) => void): () => void;
       onRobotState(cb: (state: RobotState) => void): () => void;
     };
     api: {
@@ -210,6 +220,8 @@ declare global {
       pauseMedia(): void;
       playMedia(): void;
       bannerShow(active: boolean): void;
+      setGlassCapture(active: boolean): Promise<boolean>;
+      onGlassFrame(cb: (frame: { data: string | Uint8Array; width: number; height: number; origin?: string }) => void): () => void;
       islandOpen(): Promise<void>;
       micMuteState(): Promise<boolean | null>;
       micMuteToggle(): Promise<boolean | null>;

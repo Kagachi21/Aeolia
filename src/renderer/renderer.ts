@@ -14,6 +14,69 @@ const mediaTrack = document.getElementById('mediaTrack') as HTMLSpanElement;
 const mediaLyric = document.getElementById('mediaLyric') as HTMLDivElement;
 const mediaViz = document.getElementById('mediaViz') as HTMLElement;
 const battery = document.getElementById('battery') as HTMLSpanElement;
+const glassCanvas = document.getElementById('glassCanvas') as HTMLCanvasElement | null;
+let glassCaptureActive = false;
+const glassFrameImage = new Image();
+let glassFrameUrl: string | null = null;
+/** Accept both compact JPEG bytes from the main process and data URLs from
+ *  probes. A previous blob URL is released on every new frame so decoding
+ *  cannot accumulate images in renderer memory. */
+function setGlassFrameSource(data: string | Uint8Array): void {
+  if (typeof data === 'string') {
+    glassFrameImage.src = data;
+    return;
+  }
+  if (glassFrameUrl) URL.revokeObjectURL(glassFrameUrl);
+  // Copy into a plain ArrayBuffer: Electron's serialised bytes may be typed
+  // as SharedArrayBuffer-backed, which BlobPart does not accept.
+  const buffer = new ArrayBuffer(data.byteLength);
+  new Uint8Array(buffer).set(data);
+  glassFrameUrl = URL.createObjectURL(new Blob([buffer], { type: 'image/jpeg' }));
+  glassFrameImage.src = glassFrameUrl;
+}
+glassFrameImage.onload = () => {
+  if (!glassCanvas || !glassCaptureActive || root.dataset.surface !== 'Liquid glass') return;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const width = Math.max(1, Math.round((glassCanvas.clientWidth || root.clientWidth) * dpr));
+  const height = Math.max(1, Math.round((glassCanvas.clientHeight || root.clientHeight) * dpr));
+  if (glassCanvas.width !== width || glassCanvas.height !== height) {
+    glassCanvas.width = width;
+    glassCanvas.height = height;
+  }
+  const ctx = glassCanvas.getContext('2d');
+  if (!ctx) return;
+  ctx.clearRect(0, 0, width, height);
+  ctx.drawImage(glassFrameImage, 0, 0, width, height);
+  glassCanvas.dataset.frame = 'on';
+  glassCanvas.dataset.drawn = `${width}x${height}`;
+  // Opacity is driven by --glass-a in CSS so the thickness dial changes the
+  // amount of real desktop visible without a per-frame JS style write.
+};
+window.api.onGlassFrame?.((frame) => {
+  if (!glassCaptureActive || root.dataset.surface !== 'Liquid glass') return;
+  if (glassCanvas) {
+    glassCanvas.dataset.received = 'true';
+    glassCanvas.dataset.origin = frame.origin || 'injected';
+  }
+  setGlassFrameSource(frame.data);
+});
+/* Sampling stops while the island is hidden behind the hover-only mode: its
+   pane is transparent then, so fresh desktop pixels would be thrown away. */
+function glassShouldRun(surface: string): boolean {
+  const hidden = root.dataset.hidden === 'true';
+  return surface === 'Liquid glass'
+    && (!hidden || hovered || root.dataset.state === 'open');
+}
+function syncDesktopGlass(surface: string): void {
+  const next = glassShouldRun(surface);
+  if (next === glassCaptureActive) return;
+  glassCaptureActive = next;
+  if (!next && glassCanvas) {
+    glassCanvas.dataset.frame = 'off';
+    glassCanvas.style.removeProperty('opacity');
+  }
+  void Promise.resolve(window.api.setGlassCapture?.(next)).catch(() => undefined);
+}
 
 const catTemplate = document.getElementById('catTemplate') as HTMLTemplateElement;
 for (const slot of ['miniCatSlot', 'pillCatSlot', 'brandCatSlot']) {
@@ -108,13 +171,21 @@ const bnAvatar = document.getElementById('bnAvatar') as HTMLElement;
 const bnTitle = document.getElementById('bnTitle') as HTMLElement;
 const bnBody = document.getElementById('bnBody') as HTMLElement;
 
+/* A real drag must not also fire the "click to open" handlers below. The flag
+   is consumed by the first click that follows a moved pointer. */
+let dragJustMoved = false;
+
 /* Clicking the small notch expands the island into the open card. The window
    is click-through while the notch shows, so this fires once hover has peeked
    the island to the pill (clicks then land on the real window). The pill
    handles the click too: the peek already flipped state to pill, so the
    click that "hits the notch" physically lands on the pill layer. */
-miniLayer.addEventListener('click', () => { window.api.islandOpen(); });
+miniLayer.addEventListener('click', () => {
+  if (dragJustMoved) { dragJustMoved = false; return; }
+  window.api.islandOpen();
+});
 pillLayer.addEventListener('click', (e) => {
+  if (dragJustMoved) { dragJustMoved = false; return; }
   if ((e.target as HTMLElement | null)?.closest('button')) return;
   window.api.islandOpen();
 });
@@ -181,6 +252,15 @@ const pad = (n: number) => String(n).padStart(2, '0');
 function applyGlass(level: number | undefined): void {
   const a = Math.min(0.9, Math.max(0.2, (Number(level) || 55) / 100));
   root.style.setProperty('--glass-a', a.toFixed(2).replace(/0$/, ''));
+  /* The three material recipes from the Liquid Candy Glass reference, mapped
+     from the single glassLevel dial: t is the dial, k follows t because this
+     build has no separate tint slider, and hue is fixed to the reference's
+     strawberry value so changing the accent never repaints the material. */
+  const t = Math.min(100, Math.max(0, Number(level) || 55));
+  root.style.setProperty('--liquid-blur', `${(4 + t * 0.34).toFixed(1)}px`);
+  root.style.setProperty('--liquid-rim', `${(0.6 + t * 0.055).toFixed(2)}px`);
+  root.style.setProperty('--liquid-a', (0.1 + t * 0.0052).toFixed(3));
+  root.style.setProperty('--liquid-d', (t / 100).toFixed(2));
 }
 
 /* One variant per surface: regular is the legible frost, clear is the more
@@ -292,6 +372,25 @@ let micMuted: boolean | null = false;
 let micJoinTimer: number | null = null;
 let micHotReported = false;
 let micTogglePending = false;
+let micSyncTimer: number | null = null;
+
+/* Core Audio state can change outside Aeolia. Poll the real endpoint while a
+   meeting is active so the pill follows the OS, never a cached hope. A hidden
+   tab or an in-flight toggle is skipped: no helper is spawned for a state the
+   user cannot see. The 6 s cadence is pinned by the mic-sync probe. */
+function syncMicWhileMeeting(active: boolean): void {
+  if (active && micSyncTimer === null) {
+    micSyncTimer = window.setInterval(() => {
+      if (document.hidden || micTogglePending || root.dataset.mic !== 'on') return;
+      void window.api.micMuteState().then((muted) => {
+        if (!micTogglePending) applyMicState(muted);
+      }).catch(() => applyMicState(null));
+    }, 6000);
+  } else if (!active && micSyncTimer !== null) {
+    clearInterval(micSyncTimer);
+    micSyncTimer = null;
+  }
+}
 
 /* null is a real state: Core Audio refused the read. Never paint a success
    colour or a definite aria-pressed value for it. */
@@ -320,9 +419,11 @@ function updateMeetingMic(): void {
     if (micJoinTimer !== null) { clearTimeout(micJoinTimer); micJoinTimer = null; }
     micPill.hidden = true;
     root.dataset.mic = 'off';
+    syncMicWhileMeeting(false);
     reportMicHot(false);
   } else {
     micPill.hidden = false;
+    syncMicWhileMeeting(true);
     if (root.dataset.mic === 'off') {
       // Rising edge: play the joining animation once, then settle. The real
       // mute state is fetched so the button never claims an invented state.
@@ -376,13 +477,24 @@ if (meetingCamBtn) {
     window.api.camToggle().then((r) => {
       const hint = r.hint || 'Kamera dikontrol di aplikasi rapat (best effort)';
       meetingCamBtn.title = hint;
+      // Only the privacy path can prove state; a sent shortcut is best effort.
+      root.dataset.camState = r.verified
+        ? (r.enabled === false ? 'blocked' : r.enabled === true ? 'allowed' : 'verified')
+        : 'unverified';
       showIslandHint('Kamera', hint);
     }).catch(() => {
       meetingCamBtn.title = 'Kamera dikontrol di aplikasi rapat (best effort)';
+      root.dataset.camState = 'unverified';
       showIslandHint('Kamera', 'Kamera dikontrol di aplikasi rapat (best effort)');
     });
   });
 }
+
+window.island.onMicError?.((hint) => {
+  applyMicState(null);
+  meetingMicBtn.title = hint;
+  showIslandHint('Mikrofon', hint);
+});
 
 for (const capsule of [meetingMicBtn, meetingCamBtn]) {
   capsule?.addEventListener('mouseenter', () => reportMicHot(true));
@@ -535,12 +647,14 @@ function renderStatus(status: IslandStatus): void {
   root.dataset.media = String(status.media);
   root.dataset.accent = status.accent || '#e9eef7';
   root.dataset.surface = status.surface || 'Black';
+  document.documentElement.dataset.surface = root.dataset.surface;
   applyGlass((status as IslandStatus).glassLevel);
   applyGlassVariant(root.dataset.surface);
   root.dataset.islandStyle = status.islandStyle || root.dataset.islandStyle || 'dynamic';
   root.dataset.pos = (status as IslandStatus).islandPosition || root.dataset.pos || 'center';
-  root.dataset.hidden = String(Boolean(status.hiddenUntilHover));
+  root.dataset.hidden = String(Boolean(status.hiddenUntilHover) || Boolean((status as IslandStatus).mediaHidden));
   root.dataset.hovered = String(hovered);
+  syncDesktopGlass(root.dataset.surface || '');
   root.dataset.meeting = String(Boolean(status.meeting));
   root.dataset.meetingMic = String(Boolean(status.meetingMicButton));
   const meetingNow = Boolean(status.meeting);
@@ -588,12 +702,11 @@ let catGreetingEnabled = true;
 let greetingPlayable = true;
 
 function updateCatPos(): void {
-  // Idle must not move the cat. The old rule switched right -> center every
-  // time the robot went idle, so the same icon jumped across the pill every
-  // 30 s. catIdleCenter now means "rest in the centre", not "move on idle".
-  // Media keeps its left rail: its marquee needs the whole middle of the pill.
-  const idleCentre = root.dataset.catIdleCenter === 'true' && root.dataset.media !== 'true';
-  const next = !greetingDone ? 'center' : idleCentre ? 'center' : 'right';
+  // The cat greets from the centre, then its resting place is always the
+  // right rail. Idle and catIdleCenter must not move it back: the user asked
+  // for a fixed right-side companion. Media still uses the left rail so the
+  // marquee keeps its space; applyBarOrder() owns that exception.
+  const next = !greetingDone ? 'center' : 'right';
   // Writing the same value on every 200 ms robot tick restarted the CSS
   // transition in some Chromium builds. Only a real change touches the DOM.
   if (root.dataset.catPos !== next) root.dataset.catPos = next;
@@ -620,11 +733,11 @@ function armGreeting(): void {
 
 /**
  * One-shot decision, taken exactly once when both inputs are known:
- *   - catGreeting=false  -> never greet
- *   - greetingSeen=true  -> already greeted on an earlier launch
- * The flag is consumed at the first decision even when the greeting is
- * disabled, so re-enabling catGreeting later cannot make it play on every
- * start. Persisting immediately also survives a crash mid-animation.
+ *   - catGreeting=false -> never greet
+ *   - every cold start -> greet once, then settle on the right
+ * The saved greetingSeen flag is kept for compatibility but no longer
+ * suppresses the greeting: the user asked for a greeting on each app launch,
+ * including startup after a laptop restart.
  */
 function decideGreeting(): void {
   if (greetingDecisionMade || !greetingSettingsKnown || !greetingStateKnown) return;
@@ -647,9 +760,9 @@ function applyGreetingSetting(s: IslandSettings): void {
 }
 
 /** Fed by the persisted card state (getState + every state:changed). */
-function applyGreetingState(state: CardState): void {
+function applyGreetingState(_state: CardState): void {
   greetingStateKnown = true;
-  greetingPlayable = state.greetingSeen !== true;
+  greetingPlayable = true;
   decideGreeting();
 }
 
@@ -660,6 +773,8 @@ window.api.onSettingsChanged((s) => {
   barOrder = Array.isArray(s.barOrder) && s.barOrder.length ? s.barOrder : [...BAR_TOKENS];
   root.dataset.accent = s.accent || '#e9eef7';
   root.dataset.surface = s.surface || 'Black';
+  document.documentElement.dataset.surface = root.dataset.surface;
+  syncDesktopGlass(root.dataset.surface || '');
   applyGlass(s.glassLevel);
   applyGlassVariant(root.dataset.surface);
   applyRobotSettings(s);
@@ -670,7 +785,6 @@ window.api.onSettingsChanged((s) => {
   root.dataset.musicBg = s.musicCardBackground ?? 'album';
   root.dataset.pillLyrics = String(Boolean(s.pillLyrics));
   root.dataset.musicProgress = s.musicCardProgress ?? 'Wave';
-  root.dataset.catIdleCenter = String(Boolean(s.catIdleCenter));
   root.dataset.worshipMode = s.worshipMode || 'prayer';
   root.dataset.worshipCountdown = String(s.worshipCountdown !== false);
   applyGreetingSetting(s);
@@ -1357,9 +1471,52 @@ document.getElementById('testSpeaker')?.addEventListener('click', () => {
   osc.onended = () => ctx.close();
 });
 
+/* ---- pointer dragging ----
+   The window is frameless and not movable by Windows, so dragging is done in
+   JS: pointerdown on the island BODY (never on a button, the tab strip, an
+   input or a panel control) starts a gesture; each move sends a screen delta
+   to main, which calls setBounds. Nothing here depends on the surface, so it
+   works on Liquid glass exactly as it does on the dark themes. */
+const NO_DRAG = 'button, input, select, textarea, a, .tabs, .panels, [data-no-drag], #micPill';
+let dragId: number | null = null;
+let dragX = 0;
+let dragY = 0;
+let dragMoved = false;
+
+root.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0 || (e.target as HTMLElement | null)?.closest(NO_DRAG)) return;
+  dragId = e.pointerId;
+  dragX = e.clientX;
+  dragY = e.clientY;
+  dragMoved = false;
+  try { root.setPointerCapture(e.pointerId); } catch { /* capture is best effort */ }
+  window.island.dragStart();
+  e.preventDefault();
+});
+root.addEventListener('pointermove', (e) => {
+  if (dragId === null || e.pointerId !== dragId) return;
+  const dx = e.clientX - dragX;
+  const dy = e.clientY - dragY;
+  if (dx === 0 && dy === 0) return;
+  dragX = e.clientX;
+  dragY = e.clientY;
+  dragMoved = true;
+  window.island.dragMove(dx, dy);
+});
+const endDrag = (e: PointerEvent): void => {
+  if (dragId === null || e.pointerId !== dragId) return;
+  dragId = null;
+  try { root.releasePointerCapture(e.pointerId); } catch { /* already released */ }
+  window.island.dragEnd();
+  if (dragMoved) dragJustMoved = true;
+};
+root.addEventListener('pointerup', endDrag);
+root.addEventListener('pointercancel', endDrag);
+
 root.addEventListener('mouseenter', (e) => {
   hovered = true;
   root.dataset.hovered = 'true';
+  syncDesktopGlass(root.dataset.surface || '');
   paintGlassSpecular(e);
   window.island.pointer('enter', e.clientY);
 });
@@ -1370,6 +1527,7 @@ root.addEventListener('mousemove', (e) => {
 root.addEventListener('mouseleave', (e) => {
   hovered = false;
   root.dataset.hovered = 'false';
+  syncDesktopGlass(root.dataset.surface || '');
   window.island.pointer('leave', e.clientY);
 });
 
@@ -1381,6 +1539,7 @@ window.addEventListener('contextmenu', (e) => { e.preventDefault(); });
 window.island.onHover((inside) => {
   hovered = inside;
   root.dataset.hovered = String(inside);
+  syncDesktopGlass(root.dataset.surface || '');
   // Let the reveal fire even if hiddenUntilHover suppressed the paint.
   root.dataset.hoverCue = String(inside);
 });

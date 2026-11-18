@@ -12,6 +12,53 @@ body {
   overflow: hidden;
 }
 
+:root {
+  --chip-bg: rgba(24, 28, 26, 0.94);
+  --chip-line: rgba(255, 255, 255, 0.14);
+  --chip-mic: #7ad48a;
+  --chip-mic-label: #d9efe0;
+  --chip-mic-muted: #ff8a8a;
+  --chip-mic-muted-label: #ffd9d9;
+  --chip-cam: #8fc7ff;
+  --chip-cam-label: #d3e6fb;
+}
+:root[data-surface="Liquid glass"] {
+  --chip-bg: rgba(255, 255, 255, 0.76);
+  --chip-line: rgba(28, 35, 48, 0.2);
+  --chip-mic: #177245;
+  --chip-mic-label: #1c2330;
+  --chip-mic-muted: #b3261e;
+  --chip-mic-muted-label: #1c2330;
+  --chip-cam: #1b5fa8;
+  --chip-cam-label: #1c2330;
+}
+:root[data-surface="Candy glass"] {
+  --chip-bg: rgba(255, 224, 240, 0.82);
+  --chip-line: rgba(120, 45, 80, 0.26);
+  --chip-mic: #8b2d59;
+  --chip-mic-label: #4a2136;
+  --chip-mic-muted: #a31545;
+  --chip-mic-muted-label: #4a2136;
+  --chip-cam: #6f3d9c;
+  --chip-cam-label: #4a2136;
+}
+:root[data-surface="Translucent"] {
+  --chip-bg: rgba(205, 212, 222, 0.82);
+  --chip-line: rgba(28, 35, 48, 0.24);
+  --chip-mic: #12633d;
+  --chip-mic-label: #1c2330;
+  --chip-mic-muted: #a61c1c;
+  --chip-mic-muted-label: #1c2330;
+  --chip-cam: #1a5791;
+  --chip-cam-label: #1c2330;
+}
+:root[data-surface="Neon"] { --chip-bg: rgba(15, 24, 40, 0.92); --chip-line: rgba(70, 224, 220, 0.3); --chip-mic: #46e0dc; --chip-cam: #8ab4ff; --chip-mic-label: #dffcff; --chip-cam-label: #e4ecff; }
+:root[data-surface="Matcha"] { --chip-bg: rgba(29, 36, 28, 0.94); --chip-line: rgba(142, 222, 143, 0.28); --chip-mic: #8ade8f; --chip-cam: #a8d8b0; --chip-mic-label: #e7f6e8; --chip-cam-label: #e7f6e8; }
+:root[data-surface="Lavender"], :root[data-surface="Dusk"] { --chip-bg: rgba(36, 31, 46, 0.94); --chip-line: rgba(180, 140, 255, 0.28); --chip-mic: #c3b1ff; --chip-cam: #b48cff; --chip-mic-label: #f0eaff; --chip-cam-label: #f0eaff; }
+:root[data-surface="Rosé"], :root[data-surface="Sakura"] { --chip-bg: rgba(43, 30, 34, 0.94); --chip-line: rgba(255, 143, 199, 0.28); --chip-mic: #ff8fc7; --chip-cam: #e9a7d0; --chip-mic-label: #ffe6f2; --chip-cam-label: #ffe6f2; }
+:root[data-surface="Peach"] { --chip-bg: rgba(46, 36, 32, 0.94); --chip-line: rgba(255, 156, 107, 0.28); --chip-mic: #ff9c6b; --chip-cam: #ffcba4; --chip-mic-label: #fff0e6; --chip-cam-label: #fff0e6; }
+:root[data-surface="Aurora"] { --chip-bg: rgba(16, 26, 43, 0.94); --chip-line: rgba(95, 208, 197, 0.3); --chip-mic: #5fd0c5; --chip-cam: #9db4ff; --chip-mic-label: #e6fffc; --chip-cam-label: #eaf0ff; }
+
 body {
   user-select: none;
   -webkit-app-region: no-drag;
@@ -49,7 +96,10 @@ input:disabled {
    the rest stays transparent and click-through. */
 #island {
   --accent: #e9eef7;
-  --robot-eye: var(--accent);
+  /* The cat has its own identity. Accent is reserved for deliberately
+     accent-marked UI and never reaches any part of the artwork. */
+  --cat-outline: #6d7a90;
+  --robot-eye: #46e0dc;
   /* Specular origin in pane percentages; renderer.ts moves it with the pointer. */
   --glass-x: 30%;
   --glass-y: 8%;
@@ -243,6 +293,22 @@ input:disabled {
   overflow: hidden;
   transition: border-radius 320ms cubic-bezier(0.22, 1, 0.36, 1);
 }
+.glass-canvas {
+  position: absolute;
+  /* Full bleed: an inset left a pale band of the base pane visible as a
+     thick white frame. Edge darkening is done by .glass-fx__refract above it. */
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  border-radius: inherit;
+  clip-path: inset(1px round 17px);
+  opacity: 0;
+  filter: url(#r11-glass-refract) brightness(0.58) saturate(0.8);
+  transition: opacity 180ms ease-out;
+}
+#island[data-surface="Liquid glass"] .glass-canvas[data-frame="on"] { opacity: 0.72; }
+#island[data-surface="Liquid glass"][data-state="open"] .glass-canvas[data-frame="on"] { opacity: 0.58; }
 #island[data-surface="Liquid glass"][data-state="pill"]:not([data-glass-fx="off"]) .glass-fx,
 #island[data-surface="Liquid glass"][data-state="open"]:not([data-glass-fx="off"]) .glass-fx {
   display: block;
@@ -403,33 +469,24 @@ input:disabled {
   mix-blend-mode: normal;
 }
 #island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .glass-fx__inner {
-  padding: 7px;
-  /* Corner lights: light bends hardest where the silhouette curves most. The
-     blue halo is visible on a pale pane where pure white would disappear. */
-  background:
-    radial-gradient(circle at 8% 8%, rgba(255, 255, 255, 1) 0%, rgba(150, 188, 242, 0.5) 32%, rgba(255, 255, 255, 0) 58%),
-    radial-gradient(circle at 92% 8%, rgba(255, 255, 255, 0.95) 0%, rgba(150, 188, 242, 0.42) 32%, rgba(255, 255, 255, 0) 58%),
-    radial-gradient(circle at 8% 92%, rgba(255, 255, 255, 0.95) 0%, rgba(128, 176, 232, 0.48) 32%, rgba(255, 255, 255, 0) 58%),
-    radial-gradient(circle at 92% 92%, rgba(255, 255, 255, 1) 0%, rgba(150, 188, 242, 0.5) 32%, rgba(255, 255, 255, 0) 58%),
-    /* Thicker lower waterline: the bottom edge holds more glass than the top. */
-    linear-gradient(to bottom, rgba(255, 255, 255, 0) 62%, rgba(226, 236, 252, 0.72) 88%, rgba(255, 255, 255, 0.95) 100%),
-    linear-gradient(160deg,
-      rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0.38) 22%,
-      rgba(74, 90, 118, 0.18) 50%, rgba(74, 90, 118, 0.12) 74%,
-      rgba(255, 255, 255, 0.8) 100%);
-  /* Consecutive inset contours read as refracted depth instead of one stroke. */
+  padding: 2.5px;
+  background: linear-gradient(160deg,
+    rgba(255, 255, 255, 0.72) 0%, rgba(255, 255, 255, 0.12) 34%,
+    rgba(74, 90, 118, 0.12) 68%, rgba(255, 255, 255, 0.6) 100%);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 1),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.9),
-    inset 0 0 0 2px rgba(74, 90, 118, 0.28),
-    inset 0 -8px 12px -6px rgba(54, 70, 100, 0.6),
-    inset 0 0 12px rgba(255, 255, 255, 0.45);
+    inset 0 1px 0 rgba(255, 255, 255, 0.82),
+    inset 0 -3px 8px -5px rgba(54, 70, 100, 0.45);
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   mask-composite: exclude;
-  opacity: calc(0.52 + 0.34 * var(--glass-a, 0.55));
+  opacity: calc(0.48 + 0.28 * var(--glass-a, 0.55));
   mix-blend-mode: normal;
+}
+/* Chromatic fringe read as a dirty doubled outline on the pale pane. The
+   lit edge already carries the optical cue, so this layer is disabled. */
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .glass-fx__dispersion {
+  display: none;
 }
 #island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .glass-fx__fresnel {
   padding: 1.6px;
@@ -484,6 +541,66 @@ input:disabled {
 @media (prefers-reduced-motion: reduce) {
   #island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .glass-fx__glare,
   #island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .glass-fx__glint { transition: none; }
+}
+
+/* R13: the old lit ring stacked with Fresnel, inner contour and the desktop
+   edge vignette into the thick white frame the user rejected. Light glass now
+   has no ring at all: the pane and its refracted desktop provide the shape. */
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) {
+  border-color: rgba(54, 70, 100, 0.34);
+  box-shadow: inset 0 0 0 2px rgba(54, 70, 100, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) :is(.glass-fx__lit-edge, .glass-fx__fresnel, .glass-fx__inner, .glass-fx__glare, .glass-fx__glint) {
+  display: none;
+}
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .glass-fx__refract {
+  background: radial-gradient(120% 100% at 50% 45%, rgba(0, 0, 0, 0) 58%, rgba(28, 35, 48, 0.38) 100%);
+  -webkit-mask-image: radial-gradient(115% 130% at 50% 50%, rgba(0, 0, 0, 0) 55%, #000 100%);
+  mask-image: radial-gradient(115% 130% at 50% 50%, rgba(0, 0, 0, 0) 55%, #000 100%);
+  opacity: 0.65;
+  filter: none;
+}
+/* R14: the thickness dial is live again. --glass-a (0.2-0.9) controls BOTH
+   the base tint alpha and how much of the sampled desktop the canvas shows:
+   low = thin/translucent, high = thick/solid. The rim layers stay disabled by
+   the R13 rules above, and the sampled desktop stays darkened by the canvas
+   filter, so no bright frame returns at any dial position. */
+#island[data-surface="Liquid glass"],
+#island[data-surface="Liquid glass"][data-state="open"] {
+  background: linear-gradient(180deg,
+    rgba(238, 243, 251, calc(0.84 + 0.2 * var(--glass-a, 0.55))),
+    rgba(228, 234, 246, calc(0.85 + 0.2 * var(--glass-a, 0.55))));
+}
+#island[data-surface="Translucent"],
+#island[data-surface="Translucent"][data-state="open"] {
+  background: linear-gradient(180deg,
+    rgba(213, 218, 225, calc(0.86 + 0.2 * var(--glass-a, 0.55))),
+    rgba(202, 208, 217, calc(0.87 + 0.2 * var(--glass-a, 0.55))));
+}
+#island[data-surface="Candy glass"],
+#island[data-surface="Candy glass"][data-state="open"] {
+  background: linear-gradient(180deg,
+    rgba(248, 230, 238, calc(0.86 + 0.2 * var(--glass-a, 0.55))),
+    rgba(241, 214, 227, calc(0.87 + 0.2 * var(--glass-a, 0.55))));
+}
+/* The refracted desktop is the part that actually has depth information, so
+   the dial also changes its contribution. CSS drives it (no per-frame JS ink)
+   and both ends keep real pixels visible. */
+#island[data-surface="Liquid glass"] .glass-canvas[data-frame="on"] {
+  opacity: calc(0.984 - 0.48 * var(--glass-a, 0.55));
+}
+#island[data-surface="Liquid glass"][data-state="open"] .glass-canvas[data-frame="on"] {
+  opacity: calc(0.844 - 0.48 * var(--glass-a, 0.55));
+}
+/* Frosted scattering layer above the sampled desktop. A real (possibly very
+   dark) desktop must never punch a low-contrast hole under the dark panel ink;
+   the scrim keeps the pane light while leaving roughly a third of the sampled
+   detail visible. It fades out at the first/last 4px so the R13 rim ruler
+   stays exactly where it was. */
+.glass-fx > .glass-fx__scrim {
+  background: linear-gradient(180deg, rgba(238, 243, 251, 0.7), rgba(228, 234, 246, 0.7));
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 4px, #000 calc(100% - 4px), transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 4px, #000 calc(100% - 4px), transparent 100%);
 }
 
 /* Hover energy: light up the existing rim and hotspot, never add a second
@@ -561,6 +678,66 @@ input:disabled {
     radial-gradient(circle at 92% 92%, rgba(255, 255, 255, 1) 0%, rgba(255, 160, 200, 0.62) 34%, rgba(255, 255, 255, 0) 60%),
     linear-gradient(to bottom, rgba(255, 255, 255, 0) 62%, rgba(255, 196, 222, 0.8) 88%, rgba(255, 255, 255, 0.95) 100%);
 }
+/* ---- R15 material recipes (from the Liquid Candy Glass reference) ----
+   The source drives three materials with t = thickness, k = tint and hue:
+     blur = 4 + t*.34 px, rim = .6 + t*.055 px,
+     a = .1 + k*.0052, d = t/100, hue = 335.
+   renderer.ts maps the existing glassLevel dial onto --liquid-*. The window
+   cannot sample the desktop, so "strong refraction" becomes a deeper interior
+   lens instead of a backdrop filter, and the source's bright outer rim becomes
+   a restrained INNER contour: a literal white edge failed the no-white-frame
+   ruler. Every material stays light with #1c2330 ink (contrast >= 4.5). */
+#island {
+  --liquid-hue: 335;
+  --liquid-blur: 22.7px;
+  --liquid-rim: 3.63px;
+  --liquid-a: 0.386;
+  --liquid-d: 0.55;
+}
+
+/* 1) Liquid glass: clear cool frost, bright inner rim, strongest refraction. */
+#island[data-surface="Liquid glass"] {
+  background:
+    radial-gradient(120% 90% at 50% -25%, rgba(255, 255, 255, calc(0.16 + 0.26 * var(--liquid-d))) 0%, rgba(255, 255, 255, 0) 62%),
+    linear-gradient(180deg,
+      rgba(238, 243, 251, calc(0.84 + 0.2 * var(--glass-a))),
+      rgba(228, 234, 246, calc(0.85 + 0.2 * var(--glass-a))));
+  box-shadow:
+    inset 0 calc(-1 * var(--liquid-rim)) calc(var(--liquid-rim) * 2.4) rgba(74, 90, 118, calc(0.1 + 0.14 * var(--liquid-d))),
+    inset 0 0 0 2px rgba(54, 70, 100, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+#island[data-surface="Liquid glass"] .glass-fx__refract {
+  background: radial-gradient(120% 100% at 50% 45%, rgba(0, 0, 0, 0) 55%,
+    rgba(28, 35, 48, calc(0.3 + 0.18 * var(--liquid-d))) 86%,
+    rgba(28, 35, 48, calc(0.36 + 0.18 * var(--liquid-d))) 100%);
+}
+
+/* 2) Translucent: the source's dark smoky flat pane, adapted to a LIGHT smoky
+   flat pane so the existing dark ink keeps its contrast. No bevel, no rim, no
+   chromatic edge: only a neutral grey sheet whose depth follows --liquid-a. */
+#island[data-surface="Translucent"] {
+  background: linear-gradient(180deg,
+    rgba(205, 212, 222, calc(0.82 + 0.16 * var(--liquid-a))),
+    rgba(196, 204, 215, calc(0.84 + 0.16 * var(--liquid-a))));
+  box-shadow:
+    inset 0 0 0 1px rgba(54, 70, 100, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* 3) Candy glass: the source's hue gradient, kept pale (L 88-93%) so the dark
+   island ink still clears 4.5:1. Two hue stops plus the original milky base. */
+#island[data-surface="Candy glass"] {
+  background:
+    linear-gradient(160deg,
+      hsla(var(--liquid-hue), 100%, 92%, calc(0.42 + 0.18 * var(--liquid-a))) 0%,
+      hsla(calc(var(--liquid-hue) + 40), 100%, 88%, calc(0.3 + 0.16 * var(--liquid-d))) 55%,
+      hsla(calc(var(--liquid-hue) - 30), 100%, 93%, calc(0.38 + 0.16 * var(--liquid-a))) 100%),
+    linear-gradient(180deg,
+      rgba(248, 230, 238, calc(0.86 + 0.2 * var(--glass-a))),
+      rgba(241, 214, 227, calc(0.87 + 0.2 * var(--glass-a))));
+}
+
 #island[data-surface="Liquid glass"] #open,
 #island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) #open {
   background: transparent;
@@ -826,7 +1003,7 @@ input:disabled {
 }
 .cat { width: 100%; height: 100%; overflow: visible; }
 .cat-ear,
-.cat-head { fill: #0b0f14; stroke: var(--accent); stroke-width: 1.7; stroke-linejoin: round; }
+.cat-head { fill: #0b0f14; stroke: var(--cat-outline); stroke-width: 1.7; stroke-linejoin: round; }
 .cat-ear-in { fill: var(--robot-eye); opacity: 0.4; }
 .cat-eye { fill: var(--robot-eye); }
 .cat-glint { fill: #fff; opacity: 0.85; }
@@ -1863,10 +2040,10 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   width: 76px;
   height: 36px;
   padding: 0 11px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid var(--chip-line);
   border-radius: 18px;
-  background: rgba(24, 28, 26, 0.94);
-  color: #7ad48a;
+  background: var(--chip-bg);
+  color: var(--chip-mic);
   cursor: pointer;
   font: inherit;
   font-size: 12px;
@@ -1882,10 +2059,10 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   width: 68px;
   height: 36px;
   padding: 0 10px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid var(--chip-line);
   border-radius: 18px;
-  background: rgba(24, 28, 26, 0.94);
-  color: #8fc7ff;
+  background: var(--chip-bg);
+  color: var(--chip-cam);
   cursor: pointer;
   font: inherit;
   font-size: 12px;
@@ -1895,14 +2072,14 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), inset 0 -1px 0 rgba(0, 0, 0, 0.35);
 }
 .meeting-cam svg { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; }
-.meeting-cam .cam-label { color: #d3e6fb; }
+.meeting-cam .cam-label { color: var(--chip-cam-label); }
 .meeting-cam:focus-visible { outline: 2px solid var(--accent, #e9eef7); outline-offset: 2px; }
 /* Right-hand islands keep the row order; the window itself flips sides. */
 .meeting-mic svg { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; }
-.meeting-mic .mic-label { flex: 1; min-width: 0; text-align: left; color: #d9efe0; }
+.meeting-mic .mic-label { flex: 1; min-width: 0; text-align: left; color: var(--chip-mic-label); }
 .meeting-mic .mic-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: #4cd964; }
-.meeting-mic.muted { color: #ff8a8a; }
-.meeting-mic.muted .mic-label { color: #ffd9d9; }
+.meeting-mic.muted { color: var(--chip-mic-muted); }
+.meeting-mic.muted .mic-label { color: var(--chip-mic-muted-label); }
 .meeting-mic.muted .mic-dot { background: #ff5f57; }
 .meeting-mic:focus-visible { outline: 2px solid var(--accent, #e9eef7); outline-offset: 2px; }
 
@@ -1976,6 +2153,13 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 #island[data-banner-tone="notice"] #banner {
   background: linear-gradient(0deg, rgba(24, 28, 34, 0.97) 0%, rgba(32, 38, 46, 0.96) 100%);
 }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) #banner {
+  background: var(--chip-bg);
+  border-color: var(--chip-line);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) :is(.bn-title, .bn-body, .bn-when) { color: #1c2330; }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) :is(.bn-body, .bn-when) { color: #4f5866; }
 @keyframes banner-in {
   from { opacity: 0; transform: translateY(-10px) scale(0.92); }
   to { opacity: 1; transform: translateY(0) scale(1); }
@@ -1994,6 +2178,8 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 #island[data-banner-tone="notice"] .bn-title { color: #eef2fa; }
 #island[data-banner-tone="notice"] .bn-body { color: #c9d2e0; }
 #island[data-banner-tone="notice"] .bn-when { color: #8d99ad; }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"])[data-banner-tone="notice"] :is(.bn-title, .bn-body, .bn-when) { color: #1c2330; }
+#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"])[data-banner-tone="notice"] :is(.bn-body, .bn-when) { color: #4f5866; }
 
 /* The cat "heads to the meeting": a quick hop-lean while the banner plays. */
 #island[data-call-anim="true"] .cat { animation: cat-call 0.9s ease-in-out 2; }

@@ -4,7 +4,7 @@
 import { app, dialog, net, powerMonitor, shell } from 'electron';
 import { existsSync, watch, type FSWatcher } from 'node:fs';
 import { join } from 'node:path';
-import { getWindowTitles, type WindowInfo } from './activeWindow';
+import { getActiveWindow, getWindowTitles, type WindowInfo } from './activeWindow';
 import { startNotificationWatch, stopNotificationWatch } from './notifications';
 import { loadSettings } from './settings';
 import { load, pushNotice } from './store';
@@ -30,6 +30,19 @@ const MEETING_APPS = /zoom|msteams|teams|skype|webex|google meet|meet\.google|fa
    "meeting" or "rapat" are NOT call words — channel and tab names contain
    them constantly. Only explicit call phrases count. */
 const CALL_WORDS = /(voice|video)[ -]?(call|chat)|incoming[ -]?call|outgoing[ -]?call|ringing|in call|panggilan|voice connected|huddle|meet\.google/i;
+/* A capture session proves only that SOMETHING holds the microphone. It is
+   not proof of a meeting: browsers, games and voice assistants keep capture
+   streams for unrelated reasons. Only known conferencing clients may satisfy
+   the capture signal on their own. Browsers still count when a window title
+   explicitly announces a call, which the title loop above already handles. */
+const CAPTURE_MEETING_PROCESSES = new Set([
+  'zoom', 'msteams', 'teams', 'skype', 'webex',
+  'jitsi', 'bluejeans', 'facetime',
+]);
+/* Chat apps keep capture streams for voice messages and screen shares even
+   with no call. They need an explicit call title, handled by CALL_WORDS. */
+const CHAT_CAPTURE_PROCESSES = new Set(['discord', 'slack', 'whatsapp', 'telegram']);
+const BROWSER_PROCESSES = new Set(['chrome', 'msedge', 'firefox', 'opera', 'brave']);
 
 /** Pure matcher so probes can pin the false-positive behaviour. Window-title
     semantics are deliberately unchanged: adding audio-session detection must
@@ -63,7 +76,8 @@ export function selectMeetingApp(
   titles: WindowInfo[],
   captures: string[],
   meetingAuto: boolean,
-  ignoreApps: string[]
+  ignoreApps: string[],
+  foreground?: { process?: string; title?: string }
 ): string {
   if (!meetingAuto) return '';
   const ignored = (label: string): boolean => (ignoreApps || []).some((entry) =>
@@ -78,10 +92,57 @@ export function selectMeetingApp(
   for (const raw of captures || []) {
     const name = basename(raw);
     if (!name || SYSTEM_AUDIO_PROCESSES.has(name)) continue;
+    if (BROWSER_PROCESSES.has(name)) continue;
+    if (!CAPTURE_MEETING_PROCESSES.has(name) && !CHAT_CAPTURE_PROCESSES.has(name)) continue;
+    if (CHAT_CAPTURE_PROCESSES.has(name)) {
+      // A capture stream from Discord/Slack is proof only when that chat app
+      // is the foreground window (the user is in the call), not when it sits
+      // in the background with a stale voice/screen-share session.
+      const fgProcess = basename(foreground?.process || '');
+      const fgTitle = String(foreground?.title || '');
+      if (fgProcess !== name && !CALL_WORDS.test(fgTitle)) continue;
+    }
     if (ignored(name)) continue;
     return name;
   }
   return '';
+}
+
+export const CHAT_CAPTURE_GRACE_MS = 15000;
+
+/** Pure gate for the expensive Core Audio enumeration. A capture session can
+    only matter when a conferencing client (or a chat app that hosts calls) is
+    actually open. On a desktop with just Explorer or a browser, calling the
+    PowerShell/COM helper every 4 s bought nothing and cost ~15 processes/min.
+    Browsers need no probe here: their calls are detected from the tab title. */
+export function captureProcessesPresent(titles: WindowInfo[]): boolean {
+  return (titles || []).some((w) => {
+    const name = basename(w.process);
+    return CAPTURE_MEETING_PROCESSES.has(name) || CHAT_CAPTURE_PROCESSES.has(name);
+  });
+}
+
+/** A Discord/Slack voice call can stay live while the user alt-tabs to a
+    game. Keep the meeting state for a short grace window while the capture
+    session is still present, instead of flickering off each time focus leaves
+    the chat app. Pure so probes can pin the hysteresis. */
+export function meetingWithChatGrace(
+  found: string,
+  captures: string[],
+  previousApp: string,
+  graceUntil: number,
+  now: number,
+  corroborated = false
+): { app: string; graceUntil: number } {
+  const chatCaptures = (captures || []).map(basename)
+    .filter((name) => CHAT_CAPTURE_PROCESSES.has(name));
+  const until = (chatCaptures.length && corroborated) ? now + CHAT_CAPTURE_GRACE_MS : graceUntil;
+  if (found) return { app: found, graceUntil: until };
+  const previous = basename(previousApp);
+  if (previous && now < until && chatCaptures.includes(previous)) {
+    return { app: previousApp, graceUntil: until };
+  }
+  return { app: '', graceUntil: until };
 }
 
 const CITY_COORDS: Record<string, { lat: number; lon: number }> = {
@@ -118,6 +179,7 @@ let mediaPlaying = () => false;
 let pauseMedia: (() => void) | null = null;
 let captureProbe: (() => Promise<string[]>) | null = null;
 let meetingPollBusy = false;
+let chatGraceUntil = 0;
 
 function publish(): void { onChange?.(); }
 
@@ -135,12 +197,24 @@ async function pollMeeting(): Promise<void> {
     const s = loadSettings();
     let titles: WindowInfo[] = [];
     let captures: string[] = [];
+    let foreground: { process: string; title: string } | undefined;
     try { titles = getWindowTitles(); } catch { /* transient enumeration failure */ }
-    // No Core Audio work at all when the user disabled automatic meetings.
-    if (captureProbe && s.meetingAuto) {
+    try {
+      const active = getActiveWindow({ x: 0, y: 0, width: 0, height: 0 });
+      foreground = { process: active.process, title: active.title };
+    } catch { /* no foreground sample this tick */ }
+    // No Core Audio work at all when the user disabled automatic meetings, or
+    // when no app that can own a call capture session is open this tick.
+    if (captureProbe && s.meetingAuto && captureProcessesPresent(titles)) {
       try { captures = await captureProbe(); } catch { captures = []; }
     }
-    const found = selectMeetingApp(titles, captures, s.meetingAuto, s.meetingIgnoreApps);
+    const selected = selectMeetingApp(titles, captures, s.meetingAuto, s.meetingIgnoreApps, foreground);
+    const fgName = basename(foreground?.process || '');
+    const chatCorroborated = CHAT_CAPTURE_PROCESSES.has(fgName)
+      && captures.some((raw) => basename(raw) === fgName);
+    const resolved = meetingWithChatGrace(selected, captures, state.meetingApp, chatGraceUntil, Date.now(), chatCorroborated);
+    chatGraceUntil = resolved.graceUntil;
+    const found = resolved.app;
     const nowMeeting = Boolean(found);
     if (nowMeeting !== state.meeting) {
       if (nowMeeting) {

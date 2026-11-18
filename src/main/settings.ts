@@ -29,6 +29,9 @@ export type Settings = {
   musicCardProgress: string;
 
   islandPosition: 'left' | 'center' | 'right' | 'left-side' | 'right-side';
+  /** Pixel offset from the anchored position, written when the island is
+      dragged. {0,0} keeps every fixed-position probe and default unchanged. */
+  islandOffset: { x: number; y: number };
   islandStyle: 'dynamic' | 'notched';
   islandContent: 'clock-battery' | 'clock-robot' | 'robot-only';
   /** 'auto' follows the screen width; otherwise a fixed percent step. */
@@ -55,6 +58,9 @@ export type Settings = {
   catIdleCenter: boolean;
   miniMode: 'off' | 'hide' | 'clock' | 'clock-date' | 'cat';
   miniTrigger: 'fullscreen' | 'busy' | 'maximized';
+  /** What to do with the island while media plays: keep the pill, shrink to
+      the notch, or hide it until hovered. Default keeps current tests green. */
+  mediaMiniBehavior: 'keep' | 'mini' | 'hide';
 
   lyricsOffsetSec: number;
   lyricsSpeed: number;
@@ -63,6 +69,9 @@ export type Settings = {
   meetingAuto: boolean;
   meetingMicButton: boolean;
   meetingIgnoreApps: string[];
+  /** How the Cam capsule controls the camera: per-app shortcut, the HKCU
+      Windows privacy consent store, or both. */
+  cameraMode: 'shortcut' | 'privacy' | 'both';
   noticeOpenLinks: boolean;
   notifyDownloads: boolean;
   notifyInternet: boolean;
@@ -128,6 +137,7 @@ const DEFAULTS: Settings = {
   musicCardProgress: 'Wave',
 
   islandPosition: 'center',
+  islandOffset: { x: 0, y: 0 },
   islandStyle: 'dynamic',
   islandContent: 'clock-robot',
   islandScale: 'auto',
@@ -141,7 +151,8 @@ const DEFAULTS: Settings = {
   hotkeyOpen: 'Ctrl+Alt+N',
   hotkeyPlayPause: 'Ctrl+Alt+P',
 
-  robotEyeColor: '',
+  /* Fixed cat identity, never the accent. Legacy empty values migrate below. */
+  robotEyeColor: '#46e0dc',
   robotAccessory: 'none',
   robotEyeMovement: 'relaxed',
   robotIdleOnly: false,
@@ -153,6 +164,7 @@ const DEFAULTS: Settings = {
   catIdleCenter: true,
   miniMode: 'clock',
   miniTrigger: 'fullscreen',
+  mediaMiniBehavior: 'keep',
 
   lyricsOffsetSec: 0,
   lyricsSpeed: 1,
@@ -161,6 +173,7 @@ const DEFAULTS: Settings = {
   meetingAuto: true,
   meetingMicButton: true,
   meetingIgnoreApps: [],
+  cameraMode: 'shortcut',
   noticeOpenLinks: true,
   notifyDownloads: false,
   notifyInternet: false,
@@ -249,7 +262,8 @@ function merge(base: Settings, raw: Partial<Settings>): Settings {
   if (!['relaxed', 'cursor'].includes(merged.robotEyeMovement)) {
     merged.robotEyeMovement = base.robotEyeMovement;
   }
-  if (merged.robotEyeColor !== '' && !ROBOT_EYES.includes(merged.robotEyeColor)) {
+  if (!merged.robotEyeColor) merged.robotEyeColor = base.robotEyeColor;
+  if (!ROBOT_EYES.includes(merged.robotEyeColor)) {
     merged.robotEyeColor = base.robotEyeColor;
   }
   merged.robotIdleAfterMs = Math.min(120000, Math.max(5000, Number(merged.robotIdleAfterMs) || base.robotIdleAfterMs));
@@ -279,11 +293,17 @@ function merge(base: Settings, raw: Partial<Settings>): Settings {
   if (!['left', 'center', 'right', 'left-side', 'right-side'].includes(merged.islandPosition)) {
     merged.islandPosition = base.islandPosition;
   }
+  const off = merged.islandOffset as { x: number; y: number } | undefined;
+  merged.islandOffset = {
+    x: Number.isFinite(Number(off?.x)) ? Math.min(4000, Math.max(-4000, Math.round(Number(off!.x)))) : 0,
+    y: Number.isFinite(Number(off?.y)) ? Math.min(4000, Math.max(-4000, Math.round(Number(off!.y)))) : 0,
+  };
 
   merged.catGreeting = typeof merged.catGreeting === 'boolean' ? merged.catGreeting : base.catGreeting;
   merged.catIdleCenter = typeof merged.catIdleCenter === 'boolean' ? merged.catIdleCenter : base.catIdleCenter;
   if (!['off', 'hide', 'clock', 'clock-date', 'cat'].includes(merged.miniMode)) merged.miniMode = base.miniMode;
   if (!['fullscreen', 'busy', 'maximized'].includes(merged.miniTrigger)) merged.miniTrigger = base.miniTrigger;
+  if (!['keep', 'mini', 'hide'].includes(merged.mediaMiniBehavior)) merged.mediaMiniBehavior = base.mediaMiniBehavior;
   merged.lyricsOffsetSec = Math.round(Math.min(5, Math.max(-5, Number(merged.lyricsOffsetSec) || 0)) * 10) / 10;
   merged.lyricsSpeed = Math.min(2, Math.max(0.5, Number(merged.lyricsSpeed) || 1));
   merged.lyricsText = typeof merged.lyricsText === 'string' ? merged.lyricsText.slice(0, 20000) : '';
@@ -299,6 +319,7 @@ function merge(base: Settings, raw: Partial<Settings>): Settings {
   if (raw.islandScale === undefined && raw.meetingAuto === false) merged.meetingAuto = true;
   if (!Array.isArray(merged.meetingIgnoreApps)) merged.meetingIgnoreApps = [];
   merged.meetingIgnoreApps = merged.meetingIgnoreApps.filter((x) => typeof x === 'string').slice(0, 40);
+  if (!['shortcut', 'privacy', 'both'].includes(merged.cameraMode)) merged.cameraMode = base.cameraMode;
   const BAR_TOKENS = ['clock', 'cat', 'battery', 'media', 'mic'];
   const rawOrder: unknown[] = Array.isArray(merged.barOrder) ? merged.barOrder : [];
   merged.barOrder = [...new Set(rawOrder.filter(

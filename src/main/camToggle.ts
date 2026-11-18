@@ -25,7 +25,7 @@ export function cameraAppFor(process: string, title: string): string {
 
 const CAM_APPS: { shortcut: string; phrases: string[] }[] = [
   { shortcut: 'alt+v', phrases: ['zoom meeting', 'zoom'] },
-  { shortcut: 'ctrl+shift+m', phrases: ['microsoft teams', 'ms teams', 'msteams', 'teams'] },
+  { shortcut: 'ctrl+shift+o', phrases: ['microsoft teams', 'ms teams', 'msteams', 'teams'] },
   { shortcut: 'ctrl+shift+v', phrases: ['cisco webex', 'webex'] },
   { shortcut: 'ctrl+e', phrases: ['google meet', 'meet'] },
 ];
@@ -64,6 +64,17 @@ export function focusedAppMatches(app: string, focusedProcess: string): boolean 
   return containsParts(appParts, processParts) || containsParts(processParts, appParts);
 }
 
+/** Resolve which window the one-click camera press must focus. When we know
+    a shortcut for the meeting app, that app is always the target — a browser
+    in front must not receive Zoom's Alt+V. */
+export function cameraFocusTarget(app: string, activeProcess: string): string {
+  const name = String(app || '').trim();
+  if (name && camShortcutFor(name) !== null) return name;
+  const active = String(activeProcess || '').trim().toLowerCase().replace(/\.exe$/, '');
+  if (BROWSER_PROCESSES.has(active)) return activeProcess;
+  return name || activeProcess;
+}
+
 /** Whether the capsule can really toggle the camera in this app. */
 export function camShortcutKnown(app: string): boolean {
   return camShortcutFor(app) !== null;
@@ -75,20 +86,25 @@ export type CamDecision = {
   hint?: string;
   focus?: boolean;
   observedFocus: boolean;
+  sendAfterFocus?: boolean;
   code?: 'no-shortcut' | 'need-focus' | 'unknown-app';
 };
-export type CamCode = 'unverified-shortcut' | 'need-focus' | 'no-shortcut' | 'unknown-app' | 'send-failed';
+export type CamCode = 'unverified-shortcut' | 'need-focus' | 'no-shortcut' | 'unknown-app' | 'send-failed'
+  | 'privacy-verified' | 'privacy-unverified' | 'privacy-read-failed' | 'privacy-write-failed';
 
-/* Aeolia never observes the meeting app's camera state, so ok and verified
-   stay false in R7. A sent shortcut is only a best-effort action. */
+/* The shortcut path never observes camera state and stays ok:false. The
+   privacy path reads the HKCU consent values back, so it may honestly report
+   ok/verified:true. */
 export type CamToggleResult = {
-  ok: false;
-  verified: false;
+  ok: boolean;
+  verified: boolean;
   sent: boolean;
   focused: boolean;
   shortcut: string;
   code: CamCode;
   hint: string;
+  enabled?: boolean | null;
+  mode?: 'shortcut' | 'privacy' | 'both';
 };
 
 /** Pure decision the IPC handler applies.
@@ -97,7 +113,7 @@ export type CamToggleResult = {
  *  - no known shortcut              -> focus it and name the app in the hint,
  *                                      so the click always produces something
  *                                      the user can see. */
-export function camDecision(app: string, focusedProcess: string): CamDecision {
+export function camDecision(app: string, focusedProcess: string, focusThenSend = false): CamDecision {
   const name = String(app || '').trim();
   const combo = camShortcutFor(name);
   const isFocused = focusedAppMatches(name, focusedProcess);
@@ -116,6 +132,13 @@ export function camDecision(app: string, focusedProcess: string): CamDecision {
     };
   }
   if (!isFocused) {
+    // The pill is a one-click control. Callers that can actually bring the
+    // target forward do so, then send the shortcut in the same press; the
+    // two-step variant remains for pure decision probes.
+    if (focusThenSend) {
+      return { app: name, send: combo, focus: true, observedFocus: false,
+        sendAfterFocus: true, hint: `Fokuskan ${name}, lalu shortcut kamera dikirim` };
+    }
     return { app: name, code: 'need-focus', focus: true, observedFocus: false,
       hint: `Fokuskan ${name} dulu, lalu tekan lagi · shortcut ${combo}` };
   }

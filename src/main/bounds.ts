@@ -122,6 +122,19 @@ export function boundsFor(
   // "Notched" is documented as attached to the top edge, so it has to sit
   // flush; "Dynamic" keeps the floating gap. The side margin is unchanged.
   const topGap = settings.islandStyle === 'notched' ? 0 : margin;
-  const y = Math.round(display.bounds.y + (state === 'mini' ? 0 : topGap));
+  let y = Math.round(display.bounds.y + (state === 'mini' ? 0 : topGap));
+  // A drag offset is applied to every state so the island keeps its place when
+  // it shrinks to the notch or grows into the card. Clamping keeps the whole
+  // pane on the display it lives on, including secondary monitors whose origin
+  // is not 0,0. The default {0,0} leaves all fixed positions byte-for-byte.
+  const off = settings.islandOffset ?? { x: 0, y: 0 };
+  x = Math.round(x + off.x);
+  y = Math.round(y + off.y);
+  const minX = display.bounds.x;
+  const minY = display.bounds.y;
+  const maxX = display.bounds.x + display.bounds.width - size.width;
+  const maxY = display.bounds.y + display.bounds.height - size.height;
+  x = Math.round(Math.min(Math.max(x, minX), Math.max(minX, maxX)));
+  y = Math.round(Math.min(Math.max(y, minY), Math.max(minY, maxY)));
   return { x, y, width: size.width, height: size.height };
 }
