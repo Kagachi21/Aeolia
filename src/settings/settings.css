@@ -335,7 +335,7 @@ input[type="range"] { width: 130px; accent-color: #c98a5b; }
   font-size: 10px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: #e9eef7;
+  color: var(--set-text, #e9eef7);
 }
 /* Theme cards: 3 per row with a surface swatch */
 .surface-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
