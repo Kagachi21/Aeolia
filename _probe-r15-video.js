@@ -1,7 +1,8 @@
 /* R15 VIDEO probe (fails before mediaMiniBehavior is implemented).
    Drives the compiled main process with a virtual clock and checks the island
    base state / mediaHidden flag for mediaMiniBehavior keep|mini|hide, while
-   preserving the fullscreen priority. Run: node _probe-r15-video.js */
+   preserving the fullscreen priority. On a fresh install the shipped default
+   must be 'mini'. Run: node _probe-r15-video.js */
 const Module = require('node:module');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -9,8 +10,10 @@ const os = require('node:os');
 
 const root = __dirname;
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'aeolia-r15-video-'));
+/* No mediaMiniBehavior key: a fresh install must use the shipped default, so
+   this probe fails until DEFAULTS.mediaMiniBehavior becomes 'mini'. */
 fs.writeFileSync(path.join(tmp, 'settings.json'), JSON.stringify({
-  pollIntervalMs: 500, miniMode: 'clock', miniTrigger: 'busy', mediaMiniBehavior: 'keep',
+  pollIntervalMs: 500, miniMode: 'clock', miniTrigger: 'busy',
   mini: { width: 64, height: 14 }, pill: { width: 150, height: 36 }, open: { width: 360, height: 92 },
 }), 'utf8');
 const results = [];
@@ -115,10 +118,25 @@ const statusFor = () => {
 (async () => {
   require(path.join(root, 'dist/main/main.js'));
   await sleep(40);
-  const setSetting = (key, value) => ipcHandle.get('settings:set')(null, key, value);
+  const invoke = (ch, ...args) => ipcHandle.get(ch)(null, ...args);
+  const setSetting = (key, value) => invoke('settings:set', key, value);
+
+  // Fresh install: no mediaMiniBehavior key was seeded, so the shipped default
+  // must drive the media decision. Fails while the default is still 'keep'.
+  const fresh = await invoke('settings:get');
+  check('fresh install defaults mediaMiniBehavior to mini', fresh.mediaMiniBehavior === 'mini', String(fresh.mediaMiniBehavior));
+  playing = true; fullscreen = false; runByName('pollMedia');
+  tickPoll(); await sleep(5);
+  const freshStatus = statusFor();
+  check('default mediaMiniBehavior mini: media shrinks to the notch on a fresh install',
+    freshStatus?.state === 'mini' && freshStatus?.mediaHidden !== true,
+    JSON.stringify({ state: freshStatus?.state, mediaHidden: freshStatus?.mediaHidden }));
+  playing = false;
 
   // Baseline: a crowded browser already shrinks the island. Turn media OFF.
+  // This scenario pins 'keep' explicitly so it stays valid under any default.
   playing = false; fullscreen = false;
+  runByName('pollMedia'); // sync main's mediaPlaying back to false after the default check
   await setSetting('mediaMiniBehavior', 'keep');
   tickPoll(); await sleep(5);
   check('baseline: crowded browser shrinks without media', statusFor()?.state === 'mini', JSON.stringify({ state: statusFor()?.state }));

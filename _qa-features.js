@@ -558,7 +558,10 @@ Module._load = function (request, parent, isMain) {
     return u && u.payload.state;
   };
   const restoreActiveWindow = stubs.activeWindow.getActiveWindow;
-  settingsLive.saveSettings({ ...settingsLive.current(), miniTrigger: 'maximized' });
+  /* Stale contract: this scenario was written when the shipped default was
+     'keep'. Pin it explicitly so it still tests "media holds the pill open"
+     regardless of the new 'mini' default (assertions unchanged). */
+  settingsLive.saveSettings({ ...settingsLive.current(), miniTrigger: 'maximized', mediaMiniBehavior: 'keep' });
   stubs.activeWindow.getActiveWindow = () => ({
     process: 'chrome', title: 'QA', maximized: true, fullscreen: false,
     rect: { x: 0, y: 0, width: 1920, height: 1080 },

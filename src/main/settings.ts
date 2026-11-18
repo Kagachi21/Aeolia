@@ -164,7 +164,7 @@ const DEFAULTS: Settings = {
   catIdleCenter: true,
   miniMode: 'clock',
   miniTrigger: 'fullscreen',
-  mediaMiniBehavior: 'keep',
+  mediaMiniBehavior: 'mini',
 
   lyricsOffsetSec: 0,
   lyricsSpeed: 1,
@@ -173,7 +173,7 @@ const DEFAULTS: Settings = {
   meetingAuto: true,
   meetingMicButton: true,
   meetingIgnoreApps: [],
-  cameraMode: 'shortcut',
+  cameraMode: 'both',
   noticeOpenLinks: true,
   notifyDownloads: false,
   notifyInternet: false,

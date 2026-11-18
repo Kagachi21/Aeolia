@@ -1,8 +1,9 @@
 /* R15 MIC/CAM probe (fails before the mic-hint / camera-privacy work).
    Part A: mic helper failures must carry an explicit error hint.
    Part B: camera privacy consent toggle must read back before claiming verified.
-   Part C: main IPC routes cameraMode ('shortcut' vs 'privacy') and emits a mic
-   error hint. Part D: UI/type wiring.
+   Part C: main IPC routes cameraMode ('shortcut' vs 'privacy' vs 'both'); on a
+   fresh install the shipped default must be 'both' (privacy toggle verified by
+   read-back AND the per-app shortcut). Part D: UI/type wiring.
    Run: node _probe-r15-miccam.js */
 const Module = require('node:module');
 const path = require('node:path');
@@ -11,8 +12,10 @@ const os = require('node:os');
 
 const root = __dirname;
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'aeolia-r15-miccam-'));
+/* No cameraMode key: a fresh install must use the shipped default, so this
+   probe fails until DEFAULTS.cameraMode becomes 'both'. */
 fs.writeFileSync(path.join(tmp, 'settings.json'), JSON.stringify({
-  pollIntervalMs: 2000, cameraMode: 'privacy', meetingAuto: false, miniMode: 'clock',
+  pollIntervalMs: 2000, meetingAuto: false, miniMode: 'clock',
   mini: { width: 64, height: 14 }, pill: { width: 150, height: 36 }, open: { width: 360, height: 92 },
 }), 'utf8');
 const results = [];
@@ -131,10 +134,25 @@ mic.setMuteExecutor(async () => 'error');
   await new Promise((r) => setTimeout(r, 30));
   const invoke = (ch, ...args) => ipcHandle.get(ch)(null, ...args);
 
+  // Fresh install: no cameraMode key was seeded, so the shipped default must
+  // drive the first cam:toggle. The user chose 'both' = HKCU privacy toggle
+  // (verified read-back) + per-app shortcut. Fails while default is 'shortcut'.
+  const fresh = await invoke('settings:get');
+  check('fresh install defaults cameraMode to both', fresh.cameraMode === 'both', String(fresh.cameraMode));
+  shortcutSends = 0;
+  const bothResult = await invoke('cam:toggle');
+  check('default cameraMode both: toggles privacy (verified read-back) and sends the shortcut',
+    bothResult.mode === 'both' && bothResult.verified === true && bothResult.ok === true && shortcutSends === 1,
+    JSON.stringify({ mode: bothResult.mode, verified: bothResult.verified, ok: bothResult.ok, shortcutSends }));
+
+  // Explicit 'privacy' branch: original scenario, now pinned by the key.
+  await invoke('settings:set', 'cameraMode', 'privacy');
+  shortcutSends = 0;
   const privacyResult = await invoke('cam:toggle');
   check('cameraMode privacy: IPC reports a read-back verified state',
     privacyResult.verified === true && privacyResult.ok === true && shortcutSends === 0, JSON.stringify(privacyResult));
 
+  // Explicit 'shortcut' branch: original scenario.
   await invoke('settings:set', 'cameraMode', 'shortcut');
   shortcutSends = 0;
   const shortcutResult = await invoke('cam:toggle');
