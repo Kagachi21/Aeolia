@@ -314,8 +314,9 @@ async function main() {
   await sleep(320);
   await js(win, `document.querySelector('.tab[data-tab="music"]').click(); true`);
   await sleep(260);
-  await js(win, `window.probe.emit('lyrics', { title: 'Kavi Rao - Neon Harbor', lrc: '[00:01.00] satu\\n[00:04.00] dua' }); true`);
   await status({ state: 'open', media: true, mediaTitle: 'Kavi Rao - Neon Harbor' });
+  await sleep(120);
+  await js(win, `window.probe.emit('lyrics', { title: 'Kavi Rao - Neon Harbor', lrc: '[00:01.00] satu\\n[00:04.00] dua' }); true`);
   await sleep(1400);
   /* The renderer asks the main process for the card height; use the value it
      measured so the shot shows the card the app would actually draw. */
@@ -325,6 +326,11 @@ async function main() {
     win.setBounds({ x: openBase.x, y: openBase.y, width: openBase.width, height: Math.round(cardHeight) });
   }
   await sleep(500);
+  /* Pause the live lyric timeline before comparing pixels with the DOM value.
+     Without this, the screenshot and the report sample different frames. */
+  await js(win, `(() => { const b = document.getElementById('lyricPlay');
+    if (b && b.textContent === 'Jeda') b.click(); return true; })()`);
+  await sleep(120);
   const musicShot = await shot(win, 'asks-music');
   const musicReport = await js(win, MUSIC);
   metricsLog.music = { ...musicReport, cardHeight };

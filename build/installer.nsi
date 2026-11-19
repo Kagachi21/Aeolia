@@ -6,7 +6,7 @@ Unicode true
 !include "FileFunc.nsh"
 
 !define APP_NAME "Aeolia Island"
-!define APP_VERSION "1.2.5"
+!define APP_VERSION "1.0.0"
 !define APP_PUBLISHER "Aeolia"
 !define APP_EXE "Aeolia Island.exe"
 !define APP_ID "com.aeolia.island"
@@ -20,7 +20,7 @@ RequestExecutionLevel user
 SetCompressor /SOLID lzma
 SetCompressorDictSize 64
 
-VIProductVersion "1.2.5.0"
+VIProductVersion "1.0.0.0"
 VIAddVersionKey "ProductName" "${APP_NAME}"
 VIAddVersionKey "CompanyName" "${APP_PUBLISHER}"
 VIAddVersionKey "FileDescription" "${APP_NAME} Setup"

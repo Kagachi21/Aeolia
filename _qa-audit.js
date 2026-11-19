@@ -23,7 +23,7 @@ const wired = new Set(keys.filter((k) =>
 const unwired = keys.filter((k) => !wired.has(k));
 /* catIdleCenter is a legacy setting: it stays in DEFAULTS for compatibility but
    the renderer no longer reads it (the cat always settles on the right rail). */
-const knownInternal = ['mini', 'pill', 'open', 'catIdleCenter', 'visualizer', 'musicCardBackground', 'musicCardProgress'];
+const knownInternal = ['mini', 'pill', 'open', 'catIdleCenter', 'glassLevel', 'glassTint', 'visualizer', 'musicCardBackground', 'musicCardProgress'];
 check('Audit dead-toggle: setiap setting punya kontrol UI atau memang internal',
   unwired.length > 0 && unwired.every((k) => knownInternal.includes(k)),
   `keys=${keys.length} unwired=${JSON.stringify(unwired)}`);

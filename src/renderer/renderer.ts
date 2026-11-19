@@ -15,6 +15,7 @@ const mediaLyric = document.getElementById('mediaLyric') as HTMLDivElement;
 const mediaViz = document.getElementById('mediaViz') as HTMLElement;
 const battery = document.getElementById('battery') as HTMLSpanElement;
 const glassCanvas = document.getElementById('glassCanvas') as HTMLCanvasElement | null;
+const glassBlur = document.querySelector<SVGFEGaussianBlurElement>('#r11-glass-refract feGaussianBlur');
 let glassCaptureActive = false;
 const glassFrameImage = new Image();
 let glassFrameUrl: string | null = null;
@@ -64,7 +65,7 @@ window.api.onGlassFrame?.((frame) => {
    pane is transparent then, so fresh desktop pixels would be thrown away. */
 function glassShouldRun(surface: string): boolean {
   const hidden = root.dataset.hidden === 'true';
-  return surface === 'Liquid glass'
+  return surface === 'Liquid glass' && root.dataset.glassRefraction === 'true'
     && (!hidden || hovered || root.dataset.state === 'open');
 }
 function syncDesktopGlass(surface: string): void {
@@ -246,21 +247,37 @@ function applyRobotSettings(s: IslandSettings): void {  const index = EYE_PALETT
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
-/* Glass solidity for the Liquid glass / Translucent themes: glassLevel 20-90
-   becomes a 0.2-0.9 CSS custom property. Written through the CSSOM because
-   the CSP blocks inline style attributes. */
-function applyGlass(level: number | undefined): void {
-  const a = Math.min(0.9, Math.max(0.2, (Number(level) || 55) / 100));
+/* Glass controls map to the reference's thickness, tint and hue recipes.
+   Values are written through the CSSOM because the CSP blocks inline styles. */
+function applyGlass(
+  level: number | undefined,
+  tint: number | undefined,
+  hue: number | undefined,
+  refraction: boolean | undefined,
+): void {
+  const t = Math.min(100, Math.max(0, Number.isFinite(Number(level)) ? Number(level) : 55));
+  const k = Math.min(100, Math.max(0, Number.isFinite(Number(tint)) ? Number(tint) : 40));
+  const h = Math.min(360, Math.max(0, Number.isFinite(Number(hue)) ? Number(hue) : 335));
+  const a = 0.2 + t * 0.007;
   root.style.setProperty('--glass-a', a.toFixed(2).replace(/0$/, ''));
-  /* The three material recipes from the Liquid Candy Glass reference, mapped
-     from the single glassLevel dial: t is the dial, k follows t because this
-     build has no separate tint slider, and hue is fixed to the reference's
-     strawberry value so changing the accent never repaints the material. */
-  const t = Math.min(100, Math.max(0, Number(level) || 55));
   root.style.setProperty('--liquid-blur', `${(4 + t * 0.34).toFixed(1)}px`);
   root.style.setProperty('--liquid-rim', `${(0.6 + t * 0.055).toFixed(2)}px`);
-  root.style.setProperty('--liquid-a', (0.1 + t * 0.0052).toFixed(3));
+  root.style.setProperty('--liquid-a', (0.1 + k * 0.0052).toFixed(3));
   root.style.setProperty('--liquid-d', (t / 100).toFixed(2));
+  root.style.setProperty('--liquid-hue', String(h));
+  root.dataset.glassRefraction = String(refraction !== false);
+  glassBlur?.setAttribute('stdDeviation', ((4 + t * 0.34) / 24).toFixed(2));
+}
+
+function applyGlassSettings(s: IslandSettings): void {
+  const level = s.surface === 'Liquid glass' ? s.liquidGlassLevel ?? s.glassLevel
+    : s.surface === 'Translucent' ? s.translucentGlassLevel ?? s.glassLevel
+      : s.surface === 'Candy glass' ? s.candyGlassLevel ?? s.glassLevel : s.glassLevel;
+  const tint = s.surface === 'Liquid glass' ? s.liquidGlassTint ?? s.glassTint
+    : s.surface === 'Translucent' ? s.translucentGlassTint ?? s.glassTint
+      : s.surface === 'Candy glass' ? s.candyGlassTint ?? s.glassTint : s.glassTint;
+  const hue = s.surface === 'Candy glass' ? s.candyGlassHue ?? s.glassHue : s.glassHue;
+  applyGlass(level, tint, hue, s.glassRefraction);
 }
 
 /* One variant per surface: regular is the legible frost, clear is the more
@@ -316,6 +333,8 @@ function paintClock(): void {
 function paintMedia(title: string): void {
   if (mediaTrack.dataset.title === title) return;
   mediaTrack.dataset.title = title;
+  (window as unknown as { aeoliaCurrentMediaTitle?: string }).aeoliaCurrentMediaTitle = title;
+  window.dispatchEvent(new CustomEvent<string>('aeolia:media-track', { detail: title }));
   mediaText.dataset.scroll = 'false';
   mediaTrack.textContent = title;
   // The music card reads this title too; repaint it now instead of waiting
@@ -648,7 +667,7 @@ function renderStatus(status: IslandStatus): void {
   root.dataset.accent = status.accent || '#e9eef7';
   root.dataset.surface = status.surface || 'Black';
   document.documentElement.dataset.surface = root.dataset.surface;
-  applyGlass((status as IslandStatus).glassLevel);
+  applyGlass(status.glassLevel, status.glassTint, status.glassHue, status.glassRefraction);
   applyGlassVariant(root.dataset.surface);
   root.dataset.islandStyle = status.islandStyle || root.dataset.islandStyle || 'dynamic';
   root.dataset.pos = (status as IslandStatus).islandPosition || root.dataset.pos || 'center';
@@ -774,8 +793,8 @@ window.api.onSettingsChanged((s) => {
   root.dataset.accent = s.accent || '#e9eef7';
   root.dataset.surface = s.surface || 'Black';
   document.documentElement.dataset.surface = root.dataset.surface;
+  applyGlassSettings(s);
   syncDesktopGlass(root.dataset.surface || '');
-  applyGlass(s.glassLevel);
   applyGlassVariant(root.dataset.surface);
   applyRobotSettings(s);
   root.dataset.miniMode = s.miniMode || 'clock';

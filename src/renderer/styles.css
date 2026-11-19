@@ -404,7 +404,7 @@ input:disabled {
   opacity: calc(0.38 + 0.45 * var(--glass-a, 0.55));
   mix-blend-mode: screen;
   transform: translateX(-10%);
-  transition: transform 620ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 /* 6. Crisp specular hotspot: a short, hard-edged white glint near the
    top-left plus a thin diagonal streak. Explicit px background-size keeps it
@@ -422,7 +422,7 @@ input:disabled {
   opacity: calc(0.55 + 0.4 * var(--glass-a, 0.55));
   mix-blend-mode: screen;
   transform: translateX(-6%);
-  transition: transform 620ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 #island[data-state="open"] .glass-fx__glare { transform: translateX(8%); }
 #island[data-state="open"] .glass-fx__glint { transform: translateX(6%); }
@@ -589,6 +589,9 @@ input:disabled {
 #island[data-surface="Liquid glass"] .glass-canvas[data-frame="on"] {
   opacity: calc(0.984 - 0.48 * var(--glass-a, 0.55));
 }
+#island[data-surface="Liquid glass"][data-glass-refraction="false"] :is(.glass-canvas, .glass-fx__refract) {
+  display: none;
+}
 #island[data-surface="Liquid glass"][data-state="open"] .glass-canvas[data-frame="on"] {
   opacity: calc(0.844 - 0.48 * var(--glass-a, 0.55));
 }
@@ -598,9 +601,16 @@ input:disabled {
    detail visible. It fades out at the first/last 4px so the R13 rim ruler
    stays exactly where it was. */
 .glass-fx > .glass-fx__scrim {
-  background: linear-gradient(180deg, rgba(238, 243, 251, 0.7), rgba(228, 234, 246, 0.7));
+  background: linear-gradient(180deg,
+    rgba(238, 243, 251, calc(0.45 + 0.6 * var(--liquid-a, 0.386))),
+    rgba(228, 234, 246, calc(0.45 + 0.6 * var(--liquid-a, 0.386))));
   -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 4px, #000 calc(100% - 4px), transparent 100%);
   mask-image: linear-gradient(to bottom, transparent 0, #000 4px, #000 calc(100% - 4px), transparent 100%);
+}
+#island[data-glass-variant="candy"] .glass-fx__scrim {
+  background: linear-gradient(180deg,
+    hsl(var(--liquid-hue) 80% 96% / calc(0.45 + 0.6 * var(--liquid-a, 0.386))),
+    hsl(calc(var(--liquid-hue) + 20) 70% 91% / calc(0.45 + 0.6 * var(--liquid-a, 0.386))));
 }
 
 /* Hover energy: light up the existing rim and hotspot, never add a second
@@ -638,8 +648,9 @@ input:disabled {
 #island[data-glass-variant="clear"] .row,
 #island[data-glass-variant="clear"] .site { background: rgba(28, 35, 48, 0.08); }
 /* Translucent keeps the same optical layers but drops the cool blue lens:
-   its rim is neutral smoke, so it never reads as a second Liquid glass. */
-#island[data-surface="Translucent"] .glass-fx__refract {
+   its rim is neutral smoke, so it never reads as a second Liquid glass. The
+   variant-qualified selector outranks the earlier shared light-pane fallback. */
+#island[data-glass-variant="clear"][data-surface="Translucent"] .glass-fx__refract {
   background:
     radial-gradient(120% 100% at 50% 45%, rgba(255, 255, 255, 0) 50%, rgba(35, 42, 56, 0.18) 88%, rgba(24, 30, 40, 0.26) 100%),
     linear-gradient(to bottom,
@@ -662,21 +673,22 @@ input:disabled {
     radial-gradient(circle at 92% 92%, rgba(255, 255, 255, 0.8) 0%, rgba(180, 188, 200, 0.34) 34%, rgba(255, 255, 255, 0) 60%),
     linear-gradient(to bottom, rgba(255, 255, 255, 0) 62%, rgba(160, 170, 184, 0.48) 88%, rgba(255, 255, 255, 0.7) 100%);
 }
-#island[data-glass-variant="candy"] .glass-fx__refract {
+#island[data-glass-variant="candy"][data-surface="Candy glass"] .glass-fx__refract {
   background:
-    radial-gradient(120% 100% at 50% 45%, rgba(255, 255, 255, 0) 50%, rgba(214, 92, 142, 0.24) 88%, rgba(180, 60, 116, 0.34) 100%),
+    radial-gradient(120% 100% at 50% 45%, rgba(255, 255, 255, 0) 50%,
+      hsl(var(--liquid-hue) 65% 60% / 0.24) 88%, hsl(var(--liquid-hue) 65% 48% / 0.34) 100%),
     linear-gradient(to bottom,
-      rgba(255, 255, 255, 0.7) 0%, rgba(255, 205, 226, 0.28) 14%,
+      rgba(255, 255, 255, 0.7) 0%, hsl(var(--liquid-hue) 75% 88% / 0.28) 14%,
       rgba(0, 0, 0, 0) 32%, rgba(0, 0, 0, 0) 66%,
-      rgba(255, 166, 204, 0.24) 88%, rgba(255, 255, 255, 0.6) 100%);
+      hsl(var(--liquid-hue) 75% 80% / 0.24) 88%, rgba(255, 255, 255, 0.6) 100%);
 }
 #island[data-glass-variant="candy"] .glass-fx__inner {
   background:
-    radial-gradient(circle at 8% 8%, rgba(255, 255, 255, 1) 0%, rgba(255, 160, 200, 0.62) 34%, rgba(255, 255, 255, 0) 60%),
-    radial-gradient(circle at 92% 8%, rgba(255, 255, 255, 0.95) 0%, rgba(255, 174, 210, 0.55) 34%, rgba(255, 255, 255, 0) 60%),
-    radial-gradient(circle at 8% 92%, rgba(255, 255, 255, 0.92) 0%, rgba(255, 150, 195, 0.58) 34%, rgba(255, 255, 255, 0) 60%),
-    radial-gradient(circle at 92% 92%, rgba(255, 255, 255, 1) 0%, rgba(255, 160, 200, 0.62) 34%, rgba(255, 255, 255, 0) 60%),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0) 62%, rgba(255, 196, 222, 0.8) 88%, rgba(255, 255, 255, 0.95) 100%);
+    radial-gradient(circle at 8% 8%, rgba(255, 255, 255, 1) 0%, hsl(var(--liquid-hue) 75% 78% / 0.62) 34%, rgba(255, 255, 255, 0) 60%),
+    radial-gradient(circle at 92% 8%, rgba(255, 255, 255, 0.95) 0%, hsl(var(--liquid-hue) 75% 82% / 0.55) 34%, rgba(255, 255, 255, 0) 60%),
+    radial-gradient(circle at 8% 92%, rgba(255, 255, 255, 0.92) 0%, hsl(var(--liquid-hue) 75% 76% / 0.58) 34%, rgba(255, 255, 255, 0) 60%),
+    radial-gradient(circle at 92% 92%, rgba(255, 255, 255, 1) 0%, hsl(var(--liquid-hue) 75% 78% / 0.62) 34%, rgba(255, 255, 255, 0) 60%),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0) 62%, hsl(var(--liquid-hue) 75% 88% / 0.8) 88%, rgba(255, 255, 255, 0.95) 100%);
 }
 /* ---- R15 material recipes (from the Liquid Candy Glass reference) ----
    The source drives three materials with t = thickness, k = tint and hue:

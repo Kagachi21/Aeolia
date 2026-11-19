@@ -6,11 +6,12 @@ import { activeDisplay } from './bounds';
 
 export type CaptureResult = { ok: boolean; path?: string; error?: string; sourceId?: string };
 type Rect = { x: number; y: number; width: number; height: number };
-type Hooks = { hide(): void; show(): void; protect(on: boolean): void };
+type Hooks = { isVisible(): boolean; hide(): void; show(): void; protect(on: boolean): void };
 
 let overlay: BrowserWindow | null = null;
 let resolveRect: ((r: Rect | null) => void) | null = null;
-let hooks: Hooks = { hide() {}, show() {}, protect() {} };
+let hooks: Hooks = { isVisible: () => false, hide() {}, show() {}, protect() {} };
+let captureInProgress = false;
 
 /** Shots and recordings can go to separate user-chosen folders. An unusable
     path falls back to Pictures/Aeolia instead of failing the whole capture. */
@@ -161,8 +162,9 @@ async function captureRecordSource(): Promise<CaptureResult> {
   const { sources } = await screenSources();
   const src = sources[0];
   if (!src) return { ok: false, error: 'Layar tidak tersedia' };
-  // Exclude the island window from its own recording (Windows 10 2004+).
-  hooks.protect(true);
+  // Match the screenshot preference; Windows 10 2004+ can exclude the island
+  // from screen capture without hiding it from the user's desktop.
+  hooks.protect(!loadSettings().captureShowIsland);
   return { ok: true, sourceId: src.id };
 }
 
@@ -189,12 +191,16 @@ export function registerCapture(next: Hooks): void {
   });
 
   ipcMain.handle('capture:run', async (_e, mode: string): Promise<CaptureResult> => {
-    // "Show the island" keeps it in the shot; otherwise hide it first so the
-    // capture is clean. Recording never hides the window.
-    const showIsland = loadSettings().captureShowIsland;
-    const needsHide = !showIsland && (mode === 'full' || mode === 'window' || mode === 'area');
-    if (needsHide) { hooks.hide(); await settle(140); }
+    if (captureInProgress) return { ok: false, error: 'Tangkapan lain sedang berlangsung' };
+    captureInProgress = true;
+    let restoreIsland = false;
     try {
+      // "Show the island" keeps it in the shot; otherwise hide it first so the
+      // capture is clean. Recording never hides the window.
+      const showIsland = loadSettings().captureShowIsland;
+      const shouldHide = !showIsland && (mode === 'full' || mode === 'window' || mode === 'area');
+      restoreIsland = shouldHide && hooks.isVisible();
+      if (restoreIsland) { hooks.hide(); await settle(140); }
       if (mode === 'full') return await captureFull();
       if (mode === 'window') return await captureWindow();
       if (mode === 'area') return await captureArea();
@@ -203,7 +209,11 @@ export function registerCapture(next: Hooks): void {
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     } finally {
-      if (needsHide) { await settle(60); hooks.show(); }
+      try {
+        if (restoreIsland) { await settle(60); hooks.show(); }
+      } finally {
+        captureInProgress = false;
+      }
     }
   });
 

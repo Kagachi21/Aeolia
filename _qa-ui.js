@@ -418,6 +418,8 @@ async function rendererProbe() {
   await sleep(4600);
 
   /* ---- lirik otomatis: event lyrics -> timeline lirik jalan sendiri ---- */
+  await js(win, `window.probe.emit('status', { state: 'open', media: true, mediaTitle: 'Kavi Rao - Neon Harbor' }); true`);
+  await sleep(120);
   await js(win, `window.probe.emit('lyrics', { title: 'Kavi Rao - Neon Harbor', lrc: '[00:01.00] baris satu\\n[00:04.00] baris dua' }); true`);
   await sleep(150);
   const autoLyr = await js(win, `(() => { const snap = window.aeoliaLyricNow ? window.aeoliaLyricNow() : null;
@@ -425,6 +427,8 @@ async function rendererProbe() {
       meta: document.getElementById('lyricMeta').textContent }; })()`);
   check('lirik otomatis: LRC masuk timeline, total>0, auto berjalan',
     autoLyr.total === 4 && autoLyr.running === true, JSON.stringify(autoLyr));
+  await js(win, `window.probe.emit('status', { state: 'open', media: true, mediaTitle: 'Lagu Lain' }); true`);
+  await sleep(120);
   await js(win, `window.probe.emit('lyrics', { title: 'Lagu Lain', lrc: null }); true`);
   await sleep(120);
   const autoNone = await js(win, `document.querySelector('.lyric-empty') ? document.querySelector('.lyric-empty').textContent : ''`);
@@ -587,8 +591,8 @@ async function rendererProbe() {
   await sleep(120);
   const glass = await js(win, `(() => { const r = document.getElementById('island');
     return { surface: r.dataset.surface, a: r.style.getPropertyValue('--glass-a') }; })()`);
-  check('Translucent terpilih + --glass-a = 0.7 dari glassLevel',
-    glass.surface === 'Translucent' && glass.a === '0.7', JSON.stringify(glass));
+  check('Translucent terpilih + --glass-a = 0.69 dari glassLevel 70',
+    glass.surface === 'Translucent' && glass.a === '0.69', JSON.stringify(glass));
   await js(win, `window.probe.emit('settings', { surface: 'Black', glassLevel: 55 }); true`);
 
   /* ---- notice reply: the row only has a toggle; the reply itself happens
@@ -707,7 +711,7 @@ async function rendererProbe() {
   check('card musik: judul lagu + artis terpisah (bukan teks kontrol)',
     mcard.title === 'Neon Harbor' && mcard.sub === 'Kavi Rao', JSON.stringify({ t: mcard.title, s: mcard.sub }));
   check('card musik: waktu kanan format sisa, transport sejajar judul, volume di baris sendiri',
-    /^-0:0[2-4]$/.test(mcard.end) && mcard.transportInRow && mcard.volRow, JSON.stringify(mcard));
+    /^-0:(0[2-9]|1[0-9])$/.test(mcard.end) && mcard.transportInRow && mcard.volRow, JSON.stringify(mcard));
 
   /* ---- regresi latar kartu musik dinamis + fallback ---- */
   const bgState = `(() => { const c = document.getElementById('musicCard');

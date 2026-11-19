@@ -115,13 +115,15 @@ async function run() {
   env.meetingApp = 'Zoom'; env.focused = 'chrome';
   env.focuses = []; env.shortcuts = [];
   await clickCam();
+  env.focuses = []; env.shortcuts = [];
   const needFocus = await js(`window.api.camToggle()`);
-  check('Zoom out of focus: need-focus and no shortcut sent',
-    honest(needFocus) && needFocus.code === 'need-focus' && needFocus.sent === false
-    && env.shortcuts.length === 0 && env.focuses.length > 0,
+  check('Zoom out of focus: one click focuses and sends the shortcut',
+    honest(needFocus) && needFocus.code === 'unverified-shortcut' && needFocus.sent === true
+    && needFocus.shortcut === 'alt+v' && env.shortcuts[0] === 'alt+v'
+    && env.focuses.length > 0,
     { needFocus, focuses: env.focuses, shortcuts: env.shortcuts });
-  const focusBanner = await bannerAfter((t) => /Fokuskan/.test(t));
-  check('need-focus hint is visible', /Fokuskan/.test(focusBanner), focusBanner);
+  const focusBanner = await bannerAfter((t) => /Shortcut kamera dikirim ke Zoom/.test(t));
+  check('one-click hint is visible', /Shortcut kamera dikirim ke Zoom/.test(focusBanner), focusBanner);
 
   env.meetingApp = 'Zoom'; env.focused = 'zoom';
   env.focuses = []; env.shortcuts = []; env.sendOk = true;

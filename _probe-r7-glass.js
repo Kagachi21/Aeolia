@@ -38,9 +38,10 @@ check('one lit edge follows the light-direction dial',
 check('SVG displacement experiment exists',
   /id="r7-liquid"/.test(html) && /feImage/.test(html) && /feDisplacementMap/.test(html)
   && /feComposite/.test(html));
-check('experiment attribution and desktop-refraction limit are stated',
+check('experiment attribution and captured-desktop distinction are stated',
   /rdev\/liquid-glass-react \(MIT\)/.test(html)
-  && /(cannot|tidak bisa).{0,120}refract.{0,80}desktop|DOM.{0,100}desktop/is.test(html + css));
+  && /DOM-only filter cannot sample the OS\s+desktop/.test(html)
+  && /captured-desktop canvas/.test(html));
 check('experiment has no default-on selector',
   !/#island\s*\{[^}]*filter:\s*url\(#r7-liquid\)/.test(css)
   && /data-glass-experiment="on"/.test(css));
@@ -74,7 +75,7 @@ async function runtime() {
     })()`);
     check('exactly one active optical layer, inert to the pointer',
       dom.fxCount === 1 && dom.display === 'block' && dom.pointer === 'none', dom);
-    check('lit edge paints once by default', dom.edgeDisplay !== 'none' && dom.edgeDisplay !== 'missing', dom);
+    check('lit edge is disabled on light glass so no white frame is painted', dom.edgeDisplay === 'none', dom);
     check('SVG filter is off by default',
       dom.experiment !== 'on' && !/url\(/.test(dom.filter), dom);
     check('text stays selectable', dom.userSelect !== 'none', dom);

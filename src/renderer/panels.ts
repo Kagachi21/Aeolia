@@ -625,6 +625,32 @@
   let lyricElapsed = 0;
   let lyricStartedAt = 0;
   let lyricActive = -1;
+  let lyricRows: HTMLElement[] = [];
+  let lyricTimer: number | null = null;
+  let currentMediaTitle = (window as unknown as { aeoliaCurrentMediaTitle?: string })
+    .aeoliaCurrentMediaTitle ?? '';
+
+  function syncLyricTimer(): void {
+    if (lyricRunning && lyricLines.length > 0) {
+      if (lyricTimer === null) lyricTimer = window.setInterval(paintLyrics, 200);
+      return;
+    }
+    if (lyricTimer !== null) {
+      window.clearInterval(lyricTimer);
+      lyricTimer = null;
+    }
+  }
+
+  function lyricIndexAt(time: number): number {
+    let low = 0;
+    let high = lyricLines.length;
+    while (low < high) {
+      const mid = low + Math.floor((high - low) / 2);
+      if (lyricLines[mid].at <= time) low = mid + 1;
+      else high = mid;
+    }
+    return low - 1;
+  }
 
   /* The pill and the music progress strip both need the live lyric line, but
      the timing state lives in this closure. Expose one read-only snapshot
@@ -634,10 +660,7 @@
     aeoliaLyricNow?: () => { text: string; at: number; total: number; running: boolean };
   }).aeoliaLyricNow = () => {
     const t = lyricNow();
-    let idx = -1;
-    for (let i = 0; i < lyricLines.length; i++) {
-      if (lyricLines[i].at <= t) idx = i; else break;
-    }
+    const idx = lyricIndexAt(t);
     const total = lyricLines.length ? lyricLines[lyricLines.length - 1].at : 0;
     return {
       text: idx >= 0 ? (lyricLines[idx].text || '\u266A') : '',
@@ -685,7 +708,9 @@
     lyricLines = parseLyrics(autoLrc ?? settings?.lyricsText ?? '');
     const box = $('lyricLines');
     box.replaceChildren();
+    lyricRows = [];
     if (!lyricLines.length) {
+      syncLyricTimer();
       const p = document.createElement('p');
       p.className = 'lyric-empty';
       p.textContent = autoTried
@@ -702,6 +727,7 @@
       el.textContent = line.text || '\u266A';
       box.appendChild(el);
     });
+    lyricRows = Array.from(box.querySelectorAll<HTMLElement>('.lyric-line'));
     lyricActive = -1;
     paintLyrics();
   }
@@ -712,7 +738,8 @@
   let autoLrc: string | null = null;
   let autoTried = false;
   (window as unknown as { aeoliaAutoLyric?: (lrc: string | null, title: string) => void })
-    .aeoliaAutoLyric = (lrc) => {
+    .aeoliaAutoLyric = (lrc, title) => {
+      if (title !== currentMediaTitle) return;
       autoLrc = lrc;
       autoTried = true;
       if (lrc) {
@@ -722,9 +749,25 @@
         lyricRunning = true;
       }
       rebuildLyrics();
+      syncLyricTimer();
       paintLyricControls();
       paintLyrics();
     };
+
+  window.addEventListener('aeolia:media-track', (event) => {
+    const title = (event as CustomEvent<string>).detail;
+    if (title === currentMediaTitle) return;
+    currentMediaTitle = title;
+    autoLrc = null;
+    autoTried = false;
+    lyricElapsed = 0;
+    lyricStartedAt = 0;
+    lyricRunning = false;
+    lyricActive = -1;
+    rebuildLyrics();
+    syncLyricTimer();
+    paintLyricControls();
+  });
   // An event that arrived before panels.js loaded is waiting in renderer.js.
   const pendingAuto = (window as unknown as {
     aeoliaAutoLyricPendingGet?: () => { title: string; lrc: string | null } | null;
@@ -735,16 +778,12 @@
   }
 
   function paintLyrics(): void {
-    const rows = Array.from($('lyricLines').querySelectorAll<HTMLElement>('.lyric-line'));
-    if (!rows.length) { $('lyricLines').style.transform = 'translateY(0)'; return; }
+    if (!lyricRows.length) { $('lyricLines').style.transform = 'translateY(0)'; return; }
     const t = lyricNow();
-    let idx = -1;
-    for (let i = 0; i < lyricLines.length; i++) {
-      if (lyricLines[i].at <= t) idx = i; else break;
-    }
+    const idx = lyricIndexAt(t);
     if (idx === lyricActive) return;
     lyricActive = idx;
-    rows.forEach((row, i) => row.classList.toggle('active', i === idx));
+    lyricRows.forEach((row, i) => row.classList.toggle('active', i === idx));
     $('lyricLines').style.transform = `translateY(${27 - Math.max(0, idx) * 27}px)`;
     $('lyricState').textContent = lyricRunning ? 'Berputar' : lyricElapsed > 0 ? 'Jeda' : 'Berhenti';
     $('lyricState').classList.toggle('on', lyricRunning);
@@ -766,6 +805,7 @@
       lyricStartedAt = performance.now();
       lyricRunning = true;
     }
+    syncLyricTimer();
     paintLyricControls();
     paintLyrics();
   });
@@ -773,6 +813,7 @@
     lyricRunning = false;
     lyricElapsed = 0;
     lyricActive = -1;
+    syncLyricTimer();
     paintLyricControls();
     paintLyrics();
   });
@@ -893,7 +934,5 @@
     checkWorshipTime();
   }, 1000);
 
-  // Lyrics need sub-second resolution so a fast line change is not a second late.
-  setInterval(() => { if (lyricRunning) paintLyrics(); }, 200);
   setInterval(renderWorship, 60000);
 })();

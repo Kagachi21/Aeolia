@@ -30,19 +30,18 @@ check('renderer assigns a single glass variant per surface',
   /dataset\.glassVariant\s*=/.test(renderer) && /glassVariant[\s\S]{0,120}clear/.test(renderer));
 
 const inner = rule('#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .glass-fx__inner');
-check('edge lens has concentric inset contours', (inner.match(/inset/g) || []).length >= 3,
+check('edge lens has one restrained inner contour', (inner.match(/inset/g) || []).length >= 2 && (inner.match(/inset/g) || []).length <= 3,
   `${(inner.match(/inset/g) || []).length} inset contours`);
-check('edge lens concentrates light at the four corners',
-  (inner.match(/at (6|8|92|94)% (6|8|92|94)%/g) || []).length >= 4,
+check('edge lens avoids a four-corner halo',
+  (inner.match(/at (6|8|92|94)% (6|8|92|94)%/g) || []).length === 0,
   String((inner.match(/at (6|8|92|94)% (6|8|92|94)%/g) || []).length));
 check('edge lens carries a thicker lower waterline',
   /0 -[3-9]px/.test(inner) && /rgba\(255, 255, 255/.test(inner));
 
-const lightDispersion = rule('#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .glass-fx__dispersion');
 const lightRefract = rule('#island:is([data-surface="Liquid glass"], [data-surface="Translucent"], [data-surface="Candy glass"]) .glass-fx__refract');
-check('light pane has a visible chromatic fringe, not a faint tint',
-  (lightDispersion.match(/0\.[4-9]\d*\)/g) || []).length >= 2,
-  `${(lightDispersion.match(/0\.[4-9]\d*\)/g) || []).length} fringe alphas >= 0.4`);
+const dispersionOff = /glass-fx__dispersion\s*\{[^}]*display:\s*none/.test(css);
+check('light pane does not paint a chromatic fringe', dispersionOff,
+  dispersionOff ? 'dispersion layer off' : 'no display:none rule for .glass-fx__dispersion');
 check('light pane has a visible cool edge vignette',
   /rgba\(74, 90, 118, 0\.[3-9]\d*\)/.test(lightRefract)
   || /rgba\(54, 70, 100, 0\.[3-9]\d*\)/.test(lightRefract),

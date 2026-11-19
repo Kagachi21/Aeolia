@@ -236,19 +236,20 @@ async function main() {
   await win2.loadFile(path.join(root, 'dist', 'renderer', 'index.html'));
   await sleep(300);
   const second = await greetingSnapshot(win2);
-  check('FirstRun peluncuran kedua TIDAK menyambut lagi',
-    second.greeting === 'false' && second.catPos === 'right' && second.patches === 0,
+  check('FirstRun setiap peluncuran menyapa kembali',
+    second.greeting === 'true' && second.catPos === 'center',
     JSON.stringify(second));
-  // Re-enabling catGreeting later must not replay it either.
+  await sleep(1700);
+  // Re-enabling catGreeting inside the same running window must not replay.
   await js(win2, `window.probe.emit('settings', { catGreeting: true }); true`);
   await sleep(150);
   const reenabled = await greetingSnapshot(win2);
-  check('FirstRun mengaktifkan ulang catGreeting tidak memutar ulang sapaan',
+  check('FirstRun mengaktifkan ulang catGreeting dalam sesi yang sama tidak memutar ulang sapaan',
     reenabled.greeting === 'false', JSON.stringify(reenabled));
   win2.destroy();
 
-  /* 9. catGreeting=false on a fresh install: no greeting at all, but the
-        one-shot window is still consumed. */
+  /* 9. catGreeting=false: no greeting, but the decision is still consumed for
+        this session, so later re-enabling cannot replay mid-session. */
   const offDir = launchPreload({}, { catGreeting: false, catIdleCenter: false });
   const win3 = launchWindow(path.join(offDir, '_qa-preload.js'));
   await win3.loadFile(path.join(root, 'dist', 'renderer', 'index.html'));

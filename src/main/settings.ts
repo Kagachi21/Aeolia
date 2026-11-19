@@ -22,8 +22,18 @@ export type Settings = {
 
   surface: string;
   accent: string;
-  /** Solidity of the glass themes (Liquid glass / Translucent), 20-90. */
+  /** Thickness, tint, hue, and desktop refraction for glass surfaces. */
   glassLevel: number;
+  glassTint: number;
+  glassHue: number;
+  glassRefraction: boolean;
+  liquidGlassLevel: number;
+  liquidGlassTint: number;
+  translucentGlassLevel: number;
+  translucentGlassTint: number;
+  candyGlassLevel: number;
+  candyGlassTint: number;
+  candyGlassHue: number;
   visualizer: 'pixels' | 'bars';
   musicCardBackground: 'album' | 'plain';
   musicCardProgress: string;
@@ -132,6 +142,16 @@ const DEFAULTS: Settings = {
   surface: 'Black',
   accent: '#e9eef7',
   glassLevel: 55,
+  glassTint: 40,
+  glassHue: 335,
+  glassRefraction: true,
+  liquidGlassLevel: 55,
+  liquidGlassTint: 40,
+  translucentGlassLevel: 55,
+  translucentGlassTint: 40,
+  candyGlassLevel: 55,
+  candyGlassTint: 40,
+  candyGlassHue: 335,
   visualizer: 'pixels',
   musicCardBackground: 'album',
   musicCardProgress: 'Wave',
@@ -206,8 +226,8 @@ const DEFAULTS: Settings = {
 export const ROBOT_EYES = ['#46e0dc', '#6ea8ff', '#b48cff', '#ff8fc7', '#e9c46a', '#ff9c6b', '#ffffff'];
 
 export const PROGRESS_STYLES = ['Wave', 'Pixels', 'Comet', 'Song shape', 'Simple', 'Hearts'];
-export const GLASS_LEVEL_MIN = 20;
-export const GLASS_LEVEL_MAX = 90;
+export const GLASS_LEVEL_MIN = 0;
+export const GLASS_LEVEL_MAX = 100;
 /* Fixed percents written by builds before the slider existed. */
 const ISLAND_SCALE_MIGRATE: Record<number, number | 'auto'> = { 85: 90, 120: 115, 140: 130 };
 
@@ -282,8 +302,28 @@ function merge(base: Settings, raw: Partial<Settings>): Settings {
     const n = Number(merged.islandScale);
     merged.islandScale = Number.isFinite(n) ? Math.min(130, Math.max(75, Math.round(n))) : base.islandScale;
   }
+  const glassLevel = Number(merged.glassLevel);
   merged.glassLevel = Math.min(GLASS_LEVEL_MAX, Math.max(GLASS_LEVEL_MIN,
-    Math.round(Number(merged.glassLevel) || base.glassLevel)));
+    Number.isFinite(glassLevel) ? Math.round(glassLevel) : base.glassLevel));
+  merged.glassTint = Math.min(100, Math.max(0,
+    Math.round(Number(merged.glassTint) || 0)));
+  merged.glassHue = Math.min(360, Math.max(0,
+    Math.round(Number(merged.glassHue) || 0)));
+  const savedGlassSettings = raw as Partial<Settings>;
+  for (const [key, legacyKey, max] of [
+    ['liquidGlassLevel', 'glassLevel', 100],
+    ['liquidGlassTint', 'glassTint', 100],
+    ['translucentGlassLevel', 'glassLevel', 100],
+    ['translucentGlassTint', 'glassTint', 100],
+    ['candyGlassLevel', 'glassLevel', 100],
+    ['candyGlassTint', 'glassTint', 100],
+    ['candyGlassHue', 'glassHue', 360],
+  ] as const) {
+    const rawValue = savedGlassSettings[key];
+    const value = Number(rawValue ?? merged[legacyKey]);
+    merged[key] = Math.min(max, Math.max(0,
+      Number.isFinite(value) ? Math.round(value) : base[key]));
+  }
   if (!['pixels', 'bars'].includes(merged.visualizer)) merged.visualizer = base.visualizer;
   if (!['album', 'plain'].includes(merged.musicCardBackground)) merged.musicCardBackground = base.musicCardBackground;
   if (!PROGRESS_STYLES.includes(merged.musicCardProgress)) merged.musicCardProgress = base.musicCardProgress;
@@ -311,7 +351,7 @@ function merge(base: Settings, raw: Partial<Settings>): Settings {
     'notifyInternet', 'notifyResumeMusic', 'weatherEnabled', 'weatherRainAlert',
     'calendarCountdown', 'worshipRemind', 'worshipCountdown', 'worshipPauseMusic',
     'worshipImsakIftar', 'adhanEnabled', 'adhanFajr', 'captureShowIsland',
-    'captureMic', 'captureClipboard'] as const) {
+    'captureMic', 'captureClipboard', 'glassRefraction'] as const) {
     if (typeof merged[k] !== 'boolean') merged[k] = base[k];
   }
   // Settings files written before islandScale existed carried meetingAuto:false
@@ -381,6 +421,17 @@ export function setValue(key: string, value: unknown): Settings {
         (x): x is string => typeof x === 'string' && TAB_TOKENS.includes(x),
       ))]
       : s.visibleTabs;
+  } else if (key === 'glassLevel' || key === 'glassTint' || key === 'glassHue'
+    || key === 'liquidGlassLevel' || key === 'liquidGlassTint'
+    || key === 'translucentGlassLevel' || key === 'translucentGlassTint'
+    || key === 'candyGlassLevel' || key === 'candyGlassTint' || key === 'candyGlassHue') {
+    const min = key === 'glassLevel' ? GLASS_LEVEL_MIN : 0;
+    const max = key === 'glassHue' || key === 'candyGlassHue' ? 360 : 100;
+    const numeric = Number(value);
+    const clamped = Math.min(max, Math.max(min, Number.isFinite(numeric) ? Math.round(numeric) : s[key]));
+    (s as unknown as Record<string, number>)[key] = clamped;
+  } else if (key === 'glassRefraction') {
+    if (typeof value === 'boolean') s.glassRefraction = value;
   } else {
     (s as unknown as Record<string, unknown>)[key] = value;
   }

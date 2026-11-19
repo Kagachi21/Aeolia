@@ -137,6 +137,8 @@ contextBridge.exposeInMainWorld('api', {
      phantom product regression, so it is kept in sync with preload.ts. */
   onLyricsAuto: noopReg('lyricsAuto'),
   onMusicColors: noopReg('musicColors'),
+  onGlassFrame: noopReg('glassFrame'),
+  setGlassCapture: async () => true,
   bannerShow: (active) => record('bannerShow', active),
   islandOpen: async () => { record('islandOpen', null); return { ok: true }; },
   micMuteState: async () => ({ muted: false, supported: true }),

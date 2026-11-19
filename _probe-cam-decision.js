@@ -10,7 +10,7 @@ const check = (name, ok, detail) => {
 
 // 1. Apps that really ship a camera shortcut still get one.
 check('zoom has a shortcut', c.camShortcutFor('zoom') === 'alt+v');
-check('teams has a shortcut', c.camShortcutFor('ms-teams') === 'ctrl+shift+m');
+check('teams has a shortcut', c.camShortcutFor('ms-teams') === 'ctrl+shift+o');
 check('camShortcutKnown is true for zoom', c.camShortcutKnown('zoom') === true);
 
 // 2. Discord ships no camera keybind. Sending a guessed combo would be a lie.
@@ -64,7 +64,7 @@ check('Zoom Meeting still resolves to alt+v', c.camShortcutFor('Zoom Meeting') =
   c.camShortcutFor('Zoom Meeting'));
 check('Google Meet resolves to ctrl+e', c.camShortcutFor('Google Meet') === 'ctrl+e',
   c.camShortcutFor('Google Meet'));
-check('ms-teams resolves to the Teams shortcut', c.camShortcutFor('ms-teams') === 'ctrl+shift+m',
+check('ms-teams resolves to the Teams shortcut', c.camShortcutFor('ms-teams') === 'ctrl+shift+o',
   c.camShortcutFor('ms-teams'));
 const meetNow = c.camDecision('MeetNow', 'meetnow');
 check('focused MeetNow stays a no-shortcut decision', meetNow.code === 'no-shortcut'

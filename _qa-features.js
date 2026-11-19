@@ -149,9 +149,9 @@ Module._load = function (request, parent, isMain) {
   const gl = freshSettings().loadSettings();
   check('glassLevel default 55', gl.glassLevel === 55);
   write({ glassLevel: 5 });
-  check('glassLevel 5 di-clamp ke 20 (teks tetap terbaca)', freshSettings().loadSettings().glassLevel === 20);
+  check('glassLevel 5 diterima apa adanya (batas bawah 0)', freshSettings().loadSettings().glassLevel === 5);
   write({ glassLevel: 99 });
-  check('glassLevel 99 di-clamp ke 90 (tidak jadi solid penuh)', freshSettings().loadSettings().glassLevel === 90);
+  check('glassLevel 99 diterima apa adanya (batas atas 100)', freshSettings().loadSettings().glassLevel === 99);
   write({ glassLevel: 'tebal' });
   check('glassLevel non-angka kembali default 55', freshSettings().loadSettings().glassLevel === 55);
 
@@ -458,7 +458,7 @@ Module._load = function (request, parent, isMain) {
   /* --- kamera: shortcut per aplikasi meeting (main/camToggle.ts) --- */
   const camMod = require('./dist/main/camToggle.js');
   check('cam: Zoom -> Alt+V', camMod.camShortcutFor('zoom') === 'alt+v', String(camMod.camShortcutFor('zoom')));
-  check('cam: Teams -> Ctrl+Shift+M', camMod.camShortcutFor('msteams') === 'ctrl+shift+m');
+  check('cam: Teams -> Ctrl+Shift+O', camMod.camShortcutFor('msteams') === 'ctrl+shift+o');
   check('cam: Meet -> Ctrl+E', camMod.camShortcutFor('meet') === 'ctrl+e');
   check('cam: app tanpa shortcut -> null', camMod.camShortcutFor('discord') === null);
   const camSend = camMod.camDecision('zoom', 'zoom');

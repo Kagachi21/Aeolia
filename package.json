@@ -1,8 +1,8 @@
 {
-  "name": "aeolia-island",
-  "version": "1.2.5",
+  "name": "aeolia",
+  "version": "1.0.0",
   "private": false,
-  "description": "Aeolia Dynamic Island for Windows — NotchPixel-style control panel with memory, media, and site shortcuts.",
+  "description": "Aeolia — Dynamic Island for Windows with media, clipboard, calendar, prayer, capture, and system controls.",
   "author": "Aeolia",
   "main": "dist/main/main.js",
   "scripts": {
@@ -32,7 +32,7 @@
   },
   "build": {
     "appId": "com.aeolia.island",
-    "productName": "Aeolia Island",
+    "productName": "Aeolia",
     "copyright": "Aeolia",
     "directories": {
       "output": "dist-release",
@@ -50,5 +50,6 @@
         "dir"
       ]
     }
-  }
+  },
+  "productName": "Aeolia"
 }

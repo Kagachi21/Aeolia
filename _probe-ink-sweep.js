@@ -169,6 +169,21 @@ async function main() {
     window.probe.emit('status', ${JSON.stringify(STATUS)});
     window.probe.emit('card', ${JSON.stringify(CARD)}); true`);
   await sleep(420);
+  /* A live sampled desktop is part of the real Liquid glass backdrop. Without
+     a frame this sweep measured only the base pane and missed the low-contrast
+     hole a dark desktop could punch under the ink (QA A4 regression). */
+  const liveFrame = (() => {
+    const w = 256, h = 64, buf = Buffer.alloc(w * h * 4);
+    for (let i = 0; i < buf.length; i += 4) {
+      buf[i] = 172; buf[i + 1] = 172; buf[i + 2] = 172; buf[i + 3] = 255;
+    }
+    return nativeImage.createFromBitmap(buf, { width: w, height: h }).toDataURL();
+  })();
+  const injectFrame = () => js(win, `window.probe.emit('glassFrame', ${JSON.stringify({
+    data: liveFrame, width: 256, height: 64, origin: 'injected',
+  })}); true`);
+  await injectFrame();
+  await sleep(350);
 
   const rows = [];
   const WALLS = { light: [238, 241, 245], dark: [17, 19, 24] };
@@ -209,7 +224,8 @@ async function main() {
     win.setSize(st === 'pill' ? 150 : 64, 39);
     await sleep(240);
     await js(win, `window.probe.emit('status', ${JSON.stringify({ ...STATUS, state: st, media: true, mediaTitle: 'Kavi Rao - Neon Harbor' })}); true`);
-    await sleep(320);
+    await injectFrame();
+    await sleep(360);
     for (const wall of Object.keys(WALLS)) {
       await win.webContents.insertCSS(`html, body { background: rgb(${WALLS[wall].join(',')}) !important; }`);
       await sleep(140);

@@ -88,10 +88,10 @@ select:disabled { cursor: not-allowed; }
 .nav button.active { background: #4a352f; color: #fff; }
 .nav button:focus-visible { outline: 2px solid #c98a5b; outline-offset: 1px; }
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; background: #2b1e1a; }
-.head { display: flex; align-items: center; justify-content: space-between; padding: 12px 18px 6px; gap: 12px; }
+.head { display: flex; align-items: center; justify-content: space-between; padding: 12px 18px 6px; gap: 12px; -webkit-app-region: drag; }
 .eyebrow { font-size: 9px; letter-spacing: 1.6px; text-transform: uppercase; color: #b09a90; margin-bottom: 2px; }
 .head h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.2px; line-height: 1.15; }
-.x { width: 26px; height: 26px; border-radius: 7px; border: 0; background: rgba(255,255,255,0.06); color: #cbb9b0; font-size: 15px; flex: none; }
+.x { -webkit-app-region: no-drag; width: 26px; height: 26px; border-radius: 7px; border: 0; background: rgba(255,255,255,0.06); color: #cbb9b0; font-size: 15px; flex: none; }
 .x:hover { background: rgba(255,255,255,0.12); color: #fff; }
 .x:focus-visible { outline: 2px solid #c98a5b; outline-offset: 1px; }
 .page { flex: 1; overflow: auto; padding: 3px 18px 16px; scrollbar-width: thin; scrollbar-color: #4a352f transparent; }
@@ -254,6 +254,9 @@ input[type="range"] { width: 130px; accent-color: #c98a5b; }
   border: 1px solid rgba(255,255,255,0.08);
   background: #1c1512;
   overflow: hidden;
+  --preview-glass-level: 55;
+  --preview-glass-tint: 40;
+  --preview-glass-hue: 335;
 }
 .ap-caption {
   position: absolute;
@@ -263,6 +266,7 @@ input[type="range"] { width: 130px; accent-color: #c98a5b; }
   color: #b09a90;
 }
 .ap-pill {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -284,10 +288,13 @@ input[type="range"] { width: 130px; accent-color: #c98a5b; }
 .appearance-preview[data-surface="Sakura"] .ap-pill { background: #2e2226; }
 .appearance-preview[data-surface="Candy glass"] .ap-pill {
   background:
-    linear-gradient(155deg, rgba(255,255,255,0.8) 0%, rgba(255,210,228,0.5) 34%, rgba(255,188,216,0.28) 100%),
-    rgba(255,192,220,0.8);
+    linear-gradient(155deg,
+      hsl(var(--preview-glass-hue) 100% 98% / calc(0.35 + var(--preview-glass-tint) * 0.0045)) 0%,
+      hsl(calc(var(--preview-glass-hue) + 35) 100% 88% / calc(0.18 + var(--preview-glass-tint) * 0.004)) 54%,
+      hsl(calc(var(--preview-glass-hue) - 25) 100% 93% / calc(0.22 + var(--preview-glass-tint) * 0.004)) 100%),
+    hsl(var(--preview-glass-hue) 75% 88% / calc(0.45 + var(--preview-glass-level) * 0.004));
   border-color: rgba(255,255,255,0.72);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.9), inset 0 -5px 10px -5px rgba(180,60,116,0.4);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.9), inset 0 calc(-0.02px * var(--preview-glass-level)) 10px -5px hsl(var(--preview-glass-hue) 70% 45% / 0.4);
 }
 .appearance-preview[data-surface="Matcha"] .ap-pill { background: #1d241c; }
 .appearance-preview[data-surface="Aurora"] .ap-pill {
@@ -309,21 +316,37 @@ input[type="range"] { width: 130px; accent-color: #c98a5b; }
 }
 .appearance-preview[data-surface="Liquid glass"] .ap-pill {
   background:
-    linear-gradient(155deg, rgba(255,255,255,0.82) 0%, rgba(255,255,255,0.34) 34%, rgba(255,255,255,0.14) 62%),
-    linear-gradient(0deg, rgba(228,234,246,0.84) 0%, rgba(244,247,253,0.9) 100%);
+    linear-gradient(155deg, rgba(255,255,255,calc(0.32 + var(--preview-glass-tint) * 0.005)) 0%, rgba(255,255,255,0.34) 34%, rgba(255,255,255,0.14) 62%),
+    linear-gradient(0deg, rgba(228,234,246,calc(0.58 + var(--preview-glass-level) * 0.0032)) 0%, rgba(244,247,253,calc(0.62 + var(--preview-glass-level) * 0.0032)) 100%);
   border-color: rgba(255,255,255,0.82);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.95), inset 0 -5px 10px -5px rgba(84,100,132,0.5);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.95), inset 0 calc(-0.02px * var(--preview-glass-level)) 10px -5px rgba(84,100,132,0.5);
 }
 /* Translucent preview: smoky neutral glass, not the white Liquid frost. */
 .appearance-preview[data-surface="Translucent"] .ap-pill {
   background:
-    linear-gradient(155deg, rgba(255,255,255,0.24) 0%, rgba(255,255,255,0.06) 42%, rgba(120,130,145,0.16) 100%),
-    linear-gradient(0deg, rgba(120,130,145,0.55) 0%, rgba(148,158,172,0.48) 100%);
+    linear-gradient(155deg, rgba(255,255,255,calc(0.1 + var(--preview-glass-tint) * 0.0035)) 0%, rgba(255,255,255,0.06) 42%, rgba(120,130,145,0.16) 100%),
+    linear-gradient(0deg, rgba(120,130,145,calc(0.3 + var(--preview-glass-level) * 0.003)) 0%, rgba(148,158,172,calc(0.28 + var(--preview-glass-level) * 0.003)) 100%);
   border-color: rgba(255,255,255,0.48);
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.42), inset 0 -5px 10px -5px rgba(35,42,56,0.4);
 }
 .appearance-preview[data-surface="Translucent"] .ap-clock,
 .appearance-preview[data-surface="Translucent"] .ap-cat { color: #232a38; }
+.appearance-preview .ap-pill::after {
+  content: "";
+  position: absolute;
+  left: 12px;
+  top: 3px;
+  width: 92px;
+  height: 7px;
+  border-radius: 99px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.8), transparent);
+  opacity: 0;
+  pointer-events: none;
+}
+.appearance-preview[data-surface="Liquid glass"][data-refraction="true"] .ap-pill::after {
+  opacity: calc(0.15 + var(--preview-glass-level) * 0.005);
+  filter: blur(calc(0.2px + var(--preview-glass-level) * 0.025px));
+}
 .ap-cat {
   width: 13px;
   height: 11px;
@@ -347,6 +370,14 @@ input[type="range"] { width: 130px; accent-color: #c98a5b; }
   padding: 7px 5px;
   text-align: center;
 }
+.glass-hue-presets { display: flex; align-items: center; gap: 7px; }
+.glass-hue {
+  width: 24px; height: 24px; border-radius: 50%; border: 2px solid transparent;
+  background: var(--swatch); box-shadow: inset 0 1px 2px rgba(255,255,255,0.8), 0 1px 3px rgba(0,0,0,0.2);
+}
+.glass-hue:hover { transform: scale(1.12); }
+.glass-hue.on { border-color: var(--set-text); box-shadow: 0 0 0 2px var(--set-accent); }
+.glass-hue:focus-visible { outline: 2px solid var(--set-accent); outline-offset: 2px; }
 .sc-swatch {
   width: 30px;
   height: 15px;

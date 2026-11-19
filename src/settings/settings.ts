@@ -9,8 +9,17 @@ const PAGES = ['General', 'Appearance', 'Robot', 'Island', 'Panels', 'Keys',
 const SURFACES = ['Black', 'Pure black', 'Graphite', 'Glass', 'Acrylic', 'Rosé', 'Lavender', 'Peach', 'Sakura', 'Candy glass', 'Matcha', 'Aurora', 'Dusk', 'Neon', 'Liquid glass', 'Translucent'];
 const GLASS_SURFACES = ['Liquid glass', 'Translucent', 'Candy glass'];
 const LIGHT_SURFACES = ['Liquid glass', 'Translucent', 'Candy glass'];
-/* Keep in sync with DEFAULTS.glassLevel in src/main/settings.ts. */
+/* Keep in sync with the glass defaults in src/main/settings.ts. */
 const GLASS_LEVEL_DEFAULT = 55;
+const GLASS_TINT_DEFAULT = 40;
+const GLASS_HUE_DEFAULT = 335;
+const GLASS_HUE_PRESETS = [
+  { hue: 340, color: '#ff6fa8', label: 'Stroberi' },
+  { hue: 160, color: '#4de8b0', label: 'Mint' },
+  { hue: 275, color: '#b36bff', label: 'Anggur' },
+  { hue: 48, color: '#ffd84d', label: 'Lemon' },
+  { hue: 200, color: '#4db8ff', label: 'Langit' },
+];
 const PROGRESS_STYLES = ['Wave', 'Pixels', 'Comet', 'Song shape', 'Simple', 'Hearts'];
 const ACCENTS = ['#e9eef7', '#ffffff', '#e9c46a', '#6ea8ff', '#b48cff', '#ff6b6b', '#ff9c6b', '#6ee7a0', '#46e0dc', '#ff8fc7', '#c3b1ff', '#ffcba4', '#ffd1dc'];
 const ROBOT_EYES = ['#46e0dc', '#6ea8ff', '#b48cff', '#ff8fc7', '#e9c46a', '#ff9c6b', '#ffffff'];
@@ -57,7 +66,10 @@ if (injectedTheme?.surface) applyWindowTheme({ surface: injectedTheme.surface })
    once per page; onChange updates these nodes instead of rebuilding the page. */
 let appearancePreviewEl: HTMLElement | null = null;
 let glassSectionEl: HTMLElement | null = null;
-let glassRowEl: HTMLElement | null = null;
+let glassRows: { row: HTMLElement; surfaces: string[] }[] = [];
+let surfaceCardsEl: HTMLElement | null = null;
+let glassHuePresetsEl: HTMLElement | null = null;
+const glassSaveTimers = new Map<string, number>();
 
 /* The tab picker and the tab order editor edit the same list. A tiny in-page
    bus keeps both views in sync without rebuilding the page (which would steal
@@ -123,6 +135,7 @@ function toggle(key: string): HTMLElement {
   wrap.className = 'switch';
   const input = document.createElement('input');
   input.type = 'checkbox';
+  input.dataset.setting = key;
   input.checked = Boolean(data[key]);
   input.addEventListener('change', () => void set(key, input.checked));
   const knob = document.createElement('span');
@@ -164,11 +177,16 @@ function dropdown(key: string, options: string[]): HTMLElement {
   return select;
 }
 
-function slider(key: string, min: number, max: number, step: number, suffix: string, fallback: number = min): HTMLElement {
+function slider(
+  key: string, min: number, max: number, step: number, suffix: string,
+  fallback: number = min, onInput?: (value: number) => void,
+  onChange?: (value: number) => void,
+): HTMLElement {
   const wrap = document.createElement('div');
   wrap.className = 'range';
   const input = document.createElement('input');
   input.type = 'range';
+  input.dataset.setting = key;
   input.min = String(min);
   input.max = String(max);
   input.step = String(step);
@@ -176,8 +194,15 @@ function slider(key: string, min: number, max: number, step: number, suffix: str
   const val = document.createElement('span');
   val.className = 'val';
   val.textContent = `${input.value}${suffix}`;
-  input.addEventListener('input', () => { val.textContent = `${input.value}${suffix}`; });
-  input.addEventListener('change', () => void set(key, Number(input.value)));
+  input.addEventListener('input', () => {
+    val.textContent = `${input.value}${suffix}`;
+    onInput?.(Number(input.value));
+  });
+  input.addEventListener('change', () => {
+    const value = Number(input.value);
+    if (onChange) onChange(value);
+    else void set(key, value);
+  });
   wrap.append(input, val);
   return wrap;
 }
@@ -680,24 +705,81 @@ function appearancePreview(): HTMLElement {
     '<span class="ap-caption">Live preview</span>' +
     '<span class="ap-pill"><span class="ap-cat"></span><span class="ap-clock">--:--</span></span>';
   appearancePreviewEl = box;
+  syncAppearancePreview();
   return box;
+}
+
+function scheduleGlassSave(key: string, value: number): void {
+  const previous = glassSaveTimers.get(key);
+  if (previous !== undefined) window.clearTimeout(previous);
+  glassSaveTimers.set(key, window.setTimeout(() => {
+    glassSaveTimers.delete(key);
+    void set(key, value).then(syncAppearancePreview);
+  }, 100));
+}
+
+function saveGlassValue(key: string, value: number): void {
+  const previous = glassSaveTimers.get(key);
+  if (previous !== undefined) window.clearTimeout(previous);
+  glassSaveTimers.delete(key);
+  void set(key, value).then(syncAppearancePreview);
 }
 
 /** Repaint the preview and its glass dial from the current state without
  *  rebuilding the page, so an in-progress control never loses focus. */
 function syncAppearancePreview(): void {
-  if (!appearancePreviewEl || !appearancePreviewEl.isConnected) return;
-  appearancePreviewEl.dataset.surface = String(data.surface ?? 'Black');
-  const glassVisible = GLASS_SURFACES.includes(String(data.surface));
+  const surface = String(data.surface ?? 'Black');
+  const glassKeys = surface === 'Liquid glass'
+    ? { level: 'liquidGlassLevel', tint: 'liquidGlassTint', hue: 'glassHue' }
+    : surface === 'Translucent'
+      ? { level: 'translucentGlassLevel', tint: 'translucentGlassTint', hue: 'glassHue' }
+      : { level: 'candyGlassLevel', tint: 'candyGlassTint', hue: 'candyGlassHue' };
+  if (appearancePreviewEl?.isConnected) {
+    appearancePreviewEl.dataset.surface = surface;
+    const readControl = (key: string, fallback: number): number => {
+      const input = page.querySelector<HTMLInputElement>(`input[data-setting="${key}"]`);
+      return input ? Number(input.value) : Number(data[key] ?? fallback);
+    };
+    appearancePreviewEl.style.setProperty('--preview-glass-level', String(readControl(glassKeys.level, GLASS_LEVEL_DEFAULT)));
+    appearancePreviewEl.style.setProperty('--preview-glass-tint', String(readControl(glassKeys.tint, GLASS_TINT_DEFAULT)));
+    appearancePreviewEl.style.setProperty('--preview-glass-hue', String(readControl(glassKeys.hue, GLASS_HUE_DEFAULT)));
+    appearancePreviewEl.dataset.refraction = String(data.glassRefraction !== false);
+  }
+  const glassVisible = GLASS_SURFACES.includes(surface);
   if (glassSectionEl) glassSectionEl.hidden = !glassVisible;
-  if (glassRowEl) glassRowEl.hidden = !glassVisible;
-  const input = glassRowEl?.querySelector<HTMLInputElement>('input[type="range"]');
-  if (input) {
-    const next = String(data.glassLevel ?? GLASS_LEVEL_DEFAULT);
-    if (input.value !== next) {
-      input.value = next;
-      const val = glassRowEl?.querySelector<HTMLElement>('.val');
-      if (val) val.textContent = `${next}%`;
+  for (const { row: glassRow, surfaces } of glassRows) glassRow.hidden = !surfaces.includes(surface);
+  for (const key of [
+    'liquidGlassLevel', 'liquidGlassTint',
+    'translucentGlassLevel', 'translucentGlassTint',
+    'candyGlassLevel', 'candyGlassTint', 'candyGlassHue',
+  ]) {
+    const input = page.querySelector<HTMLInputElement>(`input[data-setting="${key}"]`);
+    const value = Number(data[key] ?? (key.endsWith('Hue') ? GLASS_HUE_DEFAULT
+      : key.endsWith('Tint') ? GLASS_TINT_DEFAULT : GLASS_LEVEL_DEFAULT));
+    if (input && document.activeElement !== input && input.value !== String(value)) {
+      input.value = String(value);
+      const val = input.closest('.range')?.querySelector<HTMLElement>('.val');
+      if (val) val.textContent = `${value}${key.endsWith('Hue') ? '°' : '%'}`;
+    }
+  }
+  const refractionInput = page.querySelector<HTMLInputElement>('input[data-setting="glassRefraction"]');
+  if (refractionInput && document.activeElement !== refractionInput) {
+    refractionInput.checked = data.glassRefraction !== false;
+  }
+  if (surfaceCardsEl) {
+    for (const card of Array.from(surfaceCardsEl.children)) {
+      const button = card as HTMLButtonElement;
+      const selected = button.querySelector('.cc-title')?.textContent ===
+        (surface === 'Liquid glass' ? 'Liquid Glass' : surface === 'Candy glass' ? 'Candy Glass' : surface);
+      button.classList.toggle('on', selected);
+      button.setAttribute('aria-pressed', String(selected));
+    }
+  }
+  if (glassHuePresetsEl) {
+    for (const preset of Array.from(glassHuePresetsEl.querySelectorAll<HTMLButtonElement>('[data-hue]'))) {
+      const selected = Number(preset.dataset.hue) === Number(data.candyGlassHue ?? GLASS_HUE_DEFAULT);
+      preset.classList.toggle('on', selected);
+      preset.setAttribute('aria-pressed', String(selected));
     }
   }
 }
@@ -705,6 +787,7 @@ function syncAppearancePreview(): void {
 function surfaceCards(): HTMLElement {
   const wrap = document.createElement('div');
   wrap.className = 'choice-grid surface-grid';
+  surfaceCardsEl = wrap;
   wrap.setAttribute('role', 'group');
   wrap.setAttribute('aria-label', 'Theme');
   SURFACES.forEach((name, i) => {
@@ -719,7 +802,8 @@ function surfaceCards(): HTMLElement {
     swatch.className = 'sc-swatch';
     const label = document.createElement('span');
     label.className = 'cc-title';
-    label.textContent = name;
+    label.textContent = name === 'Liquid glass' ? 'Liquid Glass'
+      : name === 'Candy glass' ? 'Candy Glass' : name;
     b.append(swatch, label);    b.addEventListener('click', async () => {
       await set('surface', name);
       syncAppearancePreview();
@@ -734,12 +818,43 @@ function surfaceCards(): HTMLElement {
   return wrap;
 }
 
+function glassHuePresets(): HTMLElement {
+  const wrap = document.createElement('div');
+  wrap.className = 'glass-hue-presets';
+  wrap.setAttribute('role', 'group');
+  wrap.setAttribute('aria-label', 'Preset warna Candy Glass');
+  glassHuePresetsEl = wrap;
+  for (const preset of GLASS_HUE_PRESETS) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'glass-hue';
+    button.dataset.hue = String(preset.hue);
+    button.style.setProperty('--swatch', preset.color);
+    button.setAttribute('aria-label', preset.label);
+    button.setAttribute('aria-pressed', String(Number(data.candyGlassHue ?? GLASS_HUE_DEFAULT) === preset.hue));
+    button.title = preset.label;
+    button.addEventListener('click', () => {
+      const input = page.querySelector<HTMLInputElement>('input[data-setting="candyGlassHue"]');
+      if (input) {
+        input.value = String(preset.hue);
+        input.closest('.range')?.querySelector<HTMLElement>('.val')?.replaceChildren(document.createTextNode(`${preset.hue}°`));
+      }
+      syncAppearancePreview();
+      saveGlassValue('candyGlassHue', preset.hue);
+    });
+    wrap.appendChild(button);
+  }
+  return wrap;
+}
+
 function renderPage(): void {
   title.textContent = currentPage;
   page.replaceChildren();
   appearancePreviewEl = null;
   glassSectionEl = null;
-  glassRowEl = null;
+  glassRows = [];
+  surfaceCardsEl = null;
+  glassHuePresetsEl = null;
   const add = (el: HTMLElement) => page.appendChild(el);
 
   if (currentPage === 'General') {
@@ -766,17 +881,33 @@ function renderPage(): void {
     add(section('Theme'));
     add(surfaceCards());
 
-    // Glass thickness only applies to the two glass themes; showing it for
-    // every surface would be a dead control. Keep both nodes mounted and let
-    // syncAppearancePreview() reveal them when the selection changes.
-    const glassSection = section('Kekentalan kaca');
-    const glassRow = row('Kekentalan', 'Makin tinggi makin solid. Mengikuti material Liquid Glass iOS.', slider('glassLevel', 20, 90, 5, '%', GLASS_LEVEL_DEFAULT));
+    const glassSection = section('Kontrol kaca');
     glassSectionEl = glassSection;
-    glassRowEl = glassRow;
-    glassSection.hidden = !GLASS_SURFACES.includes(String(data.surface));
-    glassRow.hidden = glassSection.hidden;
+    glassRows = [];
     add(glassSection);
-    add(glassRow);
+    const glassSlider = (key: string, label: string, desc: string, min: number, max: number, step: number, suffix: string, fallback: number, surfaces: string[]): void => {
+      const glassRow = row(label, desc, slider(key, min, max, step, suffix, fallback, () => {
+        syncAppearancePreview();
+        const input = page.querySelector<HTMLInputElement>(`input[data-setting="${key}"]`);
+        if (input) scheduleGlassSave(key, Number(input.value));
+      }, (value) => saveGlassValue(key, value)));
+      glassRows.push({ row: glassRow, surfaces });
+      add(glassRow);
+    };
+    glassSlider('liquidGlassLevel', 'Ketebalan Liquid Glass', 'Mengatur ketebalan dan kilap material Liquid Glass.', 0, 100, 1, '%', GLASS_LEVEL_DEFAULT, ['Liquid glass']);
+    glassSlider('liquidGlassTint', 'Kepekatan Liquid Glass', 'Mengatur kepekatan warna Liquid Glass.', 0, 100, 1, '%', GLASS_TINT_DEFAULT, ['Liquid glass']);
+    glassSlider('translucentGlassLevel', 'Ketebalan Translucent', 'Mengatur ketebalan dan kontras material Translucent.', 0, 100, 1, '%', GLASS_LEVEL_DEFAULT, ['Translucent']);
+    glassSlider('translucentGlassTint', 'Kepekatan Translucent', 'Mengatur kepekatan material Translucent.', 0, 100, 1, '%', GLASS_TINT_DEFAULT, ['Translucent']);
+    glassSlider('candyGlassLevel', 'Ketebalan Candy Glass', 'Mengatur ketebalan dan kilap material Candy Glass.', 0, 100, 1, '%', GLASS_LEVEL_DEFAULT, ['Candy glass']);
+    glassSlider('candyGlassTint', 'Kepekatan Candy Glass', 'Mengatur kekuatan warna Candy Glass.', 0, 100, 1, '%', GLASS_TINT_DEFAULT, ['Candy glass']);
+    glassSlider('candyGlassHue', 'Warna Candy Glass', 'Pilih rona utama khusus untuk Candy Glass.', 0, 360, 1, '°', GLASS_HUE_DEFAULT, ['Candy glass']);
+    const hueRow = row('Preset warna', 'Pilih warna cepat untuk Candy Glass.', glassHuePresets());
+    glassRows.push({ row: hueRow, surfaces: ['Candy glass'] });
+    add(hueRow);
+    const refractRow = row('Refraksi desktop', 'Menampilkan dan memperbarui pantulan desktop pada Liquid Glass.', toggle('glassRefraction'));
+    glassRows.push({ row: refractRow, surfaces: ['Liquid glass'] });
+    add(refractRow);
+    syncAppearancePreview();
 
     add(section('Island content'));
     add(choiceCards([
@@ -1033,7 +1164,7 @@ function renderPage(): void {
       { label: 'Aktif', value: 'default' }, { label: 'Mati', value: 'off' },
     ])));
     add(section('Perilaku'));
-    add(row('Tampilkan island di hasil', 'Biarkan island ikut tertangkap; bila mati, island disembunyikan dulu.', toggle('captureShowIsland')));
+    add(row('Tampilkan island di hasil', 'Aktif: tampil di screenshot dan rekaman. Mati: sembunyikan dari tangkapan Aeolia dan tangkapan layar Windows; visibilitas di desktop dipulihkan setelah screenshot.', toggle('captureShowIsland')));
     add(row('Rekam mikrofon', 'Sertakan suara Anda saat merekam layar.', toggle('captureMic')));
     add(row('Salin ke clipboard', 'Gambar hasil tangkapan langsung tersalin.', toggle('captureClipboard')));
     add(section('Penyimpanan'));
@@ -1042,7 +1173,7 @@ function renderPage(): void {
     add(note('Folder yang tidak bisa ditulis otomatis kembali ke Pictures/Aeolia. Clipboard berlaku untuk gambar; berkas rekaman selalu disimpan ke folder.'));
   } else if (currentPage === 'About') {
     add(section('Aeolia Island'));
-    add(row('Version', 'Build yang sedang berjalan.', note('1.2.5')));
+    add(row('Version', 'Build yang sedang berjalan.', note('1.0.0')));
     add(note('Panel aktif: kalender + tugas, jadwal sholat (perkiraan astronomis, 9 kota), pengingat mata, pengingat minum, capture layar (full/area/window/rekam), timer, dan kontrol sistem.'));
     add(note('Kontrol sistem nyata: brightness lewat DDC/CI, volume dan mute lewat tombol media, CPU/RAM lewat Win32, Clear RAM lewat EmptyWorkingSet.'));
     add(note('Belum aktif: kartu musik (butuh SMTC) dan Deck (butuh penghubung ponsel). Waktu sholat bukan jadwal resmi Kemenag; hari libur keagamaan belum tercantum di kalender.'));

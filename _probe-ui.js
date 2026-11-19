@@ -228,7 +228,7 @@ async function rendererProbe() {
     return { before, active, repeated };
   })()`);
   check('repeated identical robot states keep the cat at one deterministic rail',
-    cat.active === cat.repeated && cat.active === 'center', JSON.stringify(cat));
+    cat.active === cat.repeated && cat.active === 'right', JSON.stringify(cat));
 
   win.destroy();
 }

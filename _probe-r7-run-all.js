@@ -28,6 +28,17 @@ const steps = [
   { name: 'glass-material', electron: '_probe-glass-material.js' },
   { name: 'r7-glass', electron: '_probe-r7-glass.js' },
   { name: 'r8-fixes', electron: '_probe-r8-fixes.js' },
+  { name: 'r9-appearance', electron: '_probe-r9-appearance.js' },
+  { name: 'r10-reference', electron: '_probe-r10-reference.js' },
+  { name: 'r11-behaviour', electron: '_probe-r11-behaviour.js' },
+  { name: 'r11-glass', electron: '_probe-r11-glass.js' },
+  { name: 'r11-mic-sync', electron: '_probe-r11-mic-sync.js' },
+  { name: 'r13-frame', electron: '_probe-r13-frame.js' },
+  { name: 'r13-meeting', electron: '_probe-r13-meeting.js' },
+  { name: 'r14-glass-level', electron: '_probe-r14-glass-level.js' },
+  { name: 'r14-contrast', electron: '_probe-r14-contrast.js' },
+  { name: 'r14-settings-theme', electron: '_probe-r14-settings-theme.js' },
+  { name: 'r14-perf', electron: '_probe-r14-perf.js' },
   { name: 'ink-sweep', electron: '_probe-ink-sweep.js' },
   { name: 'qa-features', node: '_qa-features.js' },
   { name: 'qa-main', node: '_qa-main.js' },
@@ -53,10 +64,17 @@ function runStep(step) {
   });
   const out = `${result.stdout || ''}${result.stderr || ''}`;
   const lines = out.split(/\r?\n/);
-  const pass = lines.filter((l) => /^PASS\s/.test(l)).length;
-  const fail = lines.filter((l) => /^FAIL\s/.test(l)).length;
+  let pass = lines.filter((l) => /^PASS\s/.test(l)).length;
+  let fail = lines.filter((l) => /^FAIL\s/.test(l)).length;
   const inconclusive = lines.filter((l) => /^INCONCLUSIVE\s/.test(l)).length;
   const measured = (out.match(/elements measured:\s*(\d+)/) || [])[1];
+  /* ink-sweep reports a single explicit verdict instead of per-assertion
+     PASS lines. Count it so a contrast regression cannot hide behind the
+     runner's "no PASS lines" fallback. */
+  const sweepPass = /^INK_SWEEP PASS/m.test(out);
+  const sweepFail = /^INK_SWEEP FAIL/m.test(out);
+  if (sweepPass) pass += 1;
+  if (sweepFail) fail += 1;
   const note = measured ? `elements=${measured}` : pass + fail === 0
     ? (lines.find((l) => /\b(PASS|FAIL)\b/.test(l) && !/^(PASS|FAIL)\s/.test(l)) || '').trim()
     : '';

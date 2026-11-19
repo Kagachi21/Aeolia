@@ -133,7 +133,7 @@ async function domChecks() {
       /rgba\(120, 130, 145/.test(translucent.bg) && !/228, 234, 246/.test(translucent.bg),
       translucent.bg.slice(0, 200));
     check('Candy glass is a light tinted material, not a dark card',
-      /rgba\(255,\s*1[5-9]\d|rgba\(255,\s*2\d\d|candy/i.test(candy.bg)
+      /rgba\(255,\s*1[5-9]\d|rgba\(255,\s*2\d\d|rgba\(248,\s*230,\s*238|candy/i.test(candy.bg)
       || /(pink|rose|255,\s*1\d\d,\s*2\d\d)/i.test(candy.bg), candy.bg.slice(0, 200));
   } finally {
     win.destroy();

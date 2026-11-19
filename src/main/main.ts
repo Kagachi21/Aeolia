@@ -81,6 +81,7 @@ let robotTimer: NodeJS.Timeout | null = null;
 let settingsWin: BrowserWindow | null = null;
 let cpuSample: NodeJS.Timeout | null = null;
 let lastClip: string | null = null;
+let captureProtectionOverride = false;
 
 /* Idle is sampled every 200 ms. Requiring a sustained run of identical samples
    keeps getSystemIdleTime() wobble around the threshold from sliding the cat
@@ -127,6 +128,7 @@ function createWindow(): void {
 
   win.setMinimumSize(1, 1);
   win.setMaximumSize(4000, 4000);
+  win.setContentProtection(!settings.captureShowIsland);
   dropThickFrame(win);
   win.setAlwaysOnTop(true, 'screen-saver');
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
@@ -218,6 +220,9 @@ function registerHotkeys(): void {
 function applySettings(): void {
   const s = loadSettings();
   app.setLoginItemSettings({ openAtLogin: Boolean(s.runAtStartup) });
+  if (win && !win.isDestroyed()) {
+    win.setContentProtection(captureProtectionOverride || !s.captureShowIsland);
+  }
   if (poller) clearInterval(poller);
   poller = setInterval(pollActiveWindow, s.pollIntervalMs);
   island?.reposition();
@@ -246,7 +251,14 @@ function pushStatus(): void {
     mediaHidden,
     accent: s.accent,
     surface: s.surface,
-    glassLevel: s.glassLevel,
+    glassLevel: s.surface === 'Liquid glass' ? s.liquidGlassLevel
+      : s.surface === 'Translucent' ? s.translucentGlassLevel
+        : s.surface === 'Candy glass' ? s.candyGlassLevel : s.glassLevel,
+    glassTint: s.surface === 'Liquid glass' ? s.liquidGlassTint
+      : s.surface === 'Translucent' ? s.translucentGlassTint
+        : s.surface === 'Candy glass' ? s.candyGlassTint : s.glassTint,
+    glassHue: s.surface === 'Candy glass' ? s.candyGlassHue : s.glassHue,
+    glassRefraction: s.glassRefraction,
     cardWidth: s.cardWidth,
     islandStyle: s.islandStyle,
     islandPosition: s.islandPosition,
@@ -279,7 +291,8 @@ function pollMedia(): void {
     if (mediaPlaying && titleChanged && mediaTitle) {
       const title = mediaTitle;
       void fetchLyrics(title).then((lrc) => {
-        win?.webContents.send('lyrics:auto-loaded', { title: mediaTitle, lrc });
+        if (!mediaPlaying || mediaTitle !== title) return;
+        win?.webContents.send('lyrics:auto-loaded', { title, lrc });
       });
       // Only the album background needs cover colours; "Polos" stays as it is.
       if (loadSettings().musicCardBackground === 'album') {
@@ -797,9 +810,15 @@ app.whenReady().then(() => {
   ipcMain.handle('settings:pick-folder', () => pickFolder());
   ipcMain.on('settings:open-path', (_e, path: string) => openPath(path));
   registerCapture({
+    isVisible: () => Boolean(win && !win.isDestroyed() && win.isVisible()),
     hide: () => { if (win && !win.isDestroyed()) win.hide(); },
     show: () => { if (win && !win.isDestroyed()) win.showInactive(); },
-    protect: (on) => { if (win && !win.isDestroyed()) win.setContentProtection(on); },
+    protect: (on) => {
+      captureProtectionOverride = on;
+      if (win && !win.isDestroyed()) {
+        win.setContentProtection(captureProtectionOverride || !loadSettings().captureShowIsland);
+      }
+    },
   });
   ipcMain.on('settings:open', (_e, uri: string) => {
     if (uri.startsWith('ms-settings:')) shell.openExternal(uri);

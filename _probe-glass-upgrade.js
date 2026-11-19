@@ -106,6 +106,49 @@ const LAYERS = `
       m.glint && /px/.test(m.glint.bgSize) && /gradient/.test(m.glint.bgImage) && m.glint.blend === wantBlend,
       JSON.stringify({ bgSize: m.glint && m.glint.bgSize, blend: m.glint && m.glint.blend, want: wantBlend }));
 
+    await win.webContents.executeJavaScript(`window.probe.emit('settings', {
+      surface: 'Candy glass', glassLevel: 0, glassTint: 100, glassHue: 210,
+      glassRefraction: true, accent: '#e9eef7', islandStyle: 'dynamic',
+      islandContent: 'clock-robot', islandPosition: 'center', barOrder: ['clock', 'cat', 'battery', 'media', 'mic']
+    }); true`);
+    await sleep(60);
+    const controls = await win.webContents.executeJavaScript(`(() => {
+      const island = document.getElementById('island');
+      const blur = document.querySelector('#r11-glass-refract feGaussianBlur');
+      const fx = document.querySelector('.glass-fx__refract');
+      const scrim = document.querySelector('.glass-fx__scrim');
+      const style = getComputedStyle(island);
+      return {
+        surface: island.dataset.surface, level: style.getPropertyValue('--glass-a').trim(),
+        tint: style.getPropertyValue('--liquid-a').trim(), hue: style.getPropertyValue('--liquid-hue').trim(),
+        blur: blur?.getAttribute('stdDeviation'),
+        refract: getComputedStyle(fx).backgroundImage,
+        scrim: getComputedStyle(scrim).backgroundImage,
+      };
+    })()`);
+    check('glass controls map thickness, tint and hue to the live island',
+      controls.surface === 'Candy glass' && controls.level === '0.2'
+        && controls.tint === '0.620' && controls.hue === '210'
+        && controls.blur === '0.17' && /87, 153, 219/.test(controls.refract)
+        && /216, 221, 248/.test(controls.scrim), JSON.stringify(controls));
+    await win.webContents.executeJavaScript(`window.probe.emit('settings', {
+      surface: 'Liquid glass', glassLevel: 55, glassTint: 40, glassHue: 335,
+      glassRefraction: false, accent: '#e9eef7', islandStyle: 'dynamic',
+      islandContent: 'clock-robot', islandPosition: 'center', barOrder: ['clock', 'cat', 'battery', 'media', 'mic']
+    }); true`);
+    await sleep(60);
+    const refractOff = await win.webContents.executeJavaScript(`(() => {
+      const island = document.getElementById('island');
+      return {
+        setting: island.dataset.glassRefraction,
+        canvas: getComputedStyle(document.getElementById('glassCanvas')).display,
+        lens: getComputedStyle(document.querySelector('.glass-fx__refract')).display,
+      };
+    })()`);
+    check('refraction toggle disables desktop sampling layers',
+      refractOff.setting === 'false' && refractOff.canvas === 'none' && refractOff.lens === 'none',
+      refractOff);
+
     // Fallback: turning the effect off must hide the whole stack.
     await win.webContents.executeJavaScript(
       `document.getElementById('island').dataset.glassFx = 'off'; true`);
@@ -125,20 +168,75 @@ const LAYERS = `
 
     // Translucent is the user's live surface: it must get the retuned stack too.
     await win.webContents.executeJavaScript(`(() => {
-      document.getElementById('island').dataset.surface = 'Translucent'; return true;
+      const i = document.getElementById('island');
+      i.dataset.surface = 'Translucent'; i.dataset.glassVariant = 'clear'; return true;
     })()`);
     await sleep(60);
     const trans = await win.webContents.executeJavaScript(`(() => {
       const fx = document.querySelector('.glass-fx');
       const glint = document.querySelector('.glass-fx__glint');
+      const refract = document.querySelector('.glass-fx__refract');
       return { display: getComputedStyle(fx).display,
         glintBlend: glint ? getComputedStyle(glint).mixBlendMode : null,
-        glintBg: glint ? getComputedStyle(glint).backgroundImage.slice(0, 80) : null };
+        glintBg: glint ? getComputedStyle(glint).backgroundImage.slice(0, 80) : null,
+        refractBg: refract ? getComputedStyle(refract).backgroundImage : null };
     })()`);
     check('Translucent also renders the glass stack', trans.display === 'block', `display=${trans.display}`);
     check('Translucent glint uses normal blend (visible on light pane)',
       trans.glintBlend === 'normal' && /gradient/.test(trans.glintBg || ''),
       JSON.stringify(trans));
+    check('Translucent keeps its neutral smoke refraction',
+      /35, 42, 56/.test(trans.refractBg || '') && trans.refractBg !== m.refract.bgImage,
+      (trans.refractBg || '').slice(0, 180));
+
+    await win.webContents.executeJavaScript(`(() => {
+      const i = document.getElementById('island');
+      i.dataset.surface = 'Candy glass'; i.dataset.glassVariant = 'candy'; return true;
+    })()`);
+    await sleep(60);
+    const candy = await win.webContents.executeJavaScript(`(() => {
+      const refract = document.querySelector('.glass-fx__refract');
+      return refract ? getComputedStyle(refract).backgroundImage : '';
+    })()`);
+    check('Candy glass keeps its rose refraction',
+      /219, 87, 142/.test(candy) && candy !== m.refract.bgImage,
+      candy.slice(0, 180));
+
+    const activeMaterial = async (surface, fields, want) => {
+      await win.webContents.executeJavaScript(
+        `window.probe.emit('settings', ${JSON.stringify({ surface, ...fields })}); true`);
+      await sleep(30);
+      return win.webContents.executeJavaScript(`(() => {
+        const island = document.getElementById('island');
+        const style = getComputedStyle(island);
+        return {
+          surface: island.dataset.surface,
+          level: style.getPropertyValue('--glass-a').trim(),
+          tint: style.getPropertyValue('--liquid-a').trim(),
+          hue: style.getPropertyValue('--liquid-hue').trim()
+        };
+      })()`).then((actual) => ({ actual, matches:
+        actual.surface === surface && actual.level === want.level
+          && actual.tint === want.tint && actual.hue === want.hue }));
+    };
+    const liquidSettings = await activeMaterial('Liquid glass', {
+      glassLevel: 10, glassTint: 10, glassHue: 10, glassRefraction: true,
+      liquidGlassLevel: 40, liquidGlassTint: 50,
+    }, { level: '0.48', tint: '0.360', hue: '10' });
+    check('Liquid Glass renderer uses only its selected material settings',
+      liquidSettings.matches, JSON.stringify(liquidSettings.actual));
+    const translucentSettings = await activeMaterial('Translucent', {
+      glassLevel: 10, glassTint: 10, glassHue: 10, glassRefraction: true,
+      translucentGlassLevel: 80, translucentGlassTint: 20,
+    }, { level: '0.76', tint: '0.204', hue: '10' });
+    check('Translucent renderer uses only its selected material settings',
+      translucentSettings.matches, JSON.stringify(translucentSettings.actual));
+    const candySettings = await activeMaterial('Candy glass', {
+      glassLevel: 10, glassTint: 10, glassHue: 10, glassRefraction: true,
+      candyGlassLevel: 30, candyGlassTint: 70, candyGlassHue: 210,
+    }, { level: '0.41', tint: '0.464', hue: '210' });
+    check('Candy Glass renderer applies its own thickness, tint and hue',
+      candySettings.matches, JSON.stringify(candySettings.actual));
   } catch (e) {
     check('probe ran without throwing', false, String(e && e.stack || e));
   } finally {
