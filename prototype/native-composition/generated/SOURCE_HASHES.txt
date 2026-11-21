@@ -1,0 +1,9 @@
+# Hash validation for the supplied HLSL source of truth.
+# Expected values are recorded in ../../shaders/README.md.
+# build.rs fails the build if any source hash differs.
+
+SOURCE  LiquidGlassRefraction.hlsl   5f696fd0bb33a18f35fa6c5d1bf2e55fbe219bb2956cd28d0c1bf21fdf77c9b3
+SOURCE  GlassGPU.hlsl                f47e9e091b7a0be6ee29d6f67b6a13a9e64a1f0f623ccfe3d77b52ad8bfd8f5b
+SOURCE  CandyGlass.hlsli             4679d73f6773e2335dc4942f33a7a49516555e80ae901f26cd2954a4428eb38e
+GENERATED glass_d3d11.hlsl            27c304af9dc292ac06088022fc3974847693fad4768c9bf53883061d108167e1
+GENERATED glass_d3d11_candy.hlsl      f979e97a4b398da8ed9cba6baaca29809afd5fdba1eb5b7c3f477a82bb2503f3
